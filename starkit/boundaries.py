@@ -99,7 +99,8 @@ def find_dr_pair(sequence, captain_start_in_seq, motif, min_size, max_size):
     # 3' DR: find a matching motif downstream that gives valid size
     downstream_positions = [
         p for p in positions
-        if p > five_prime + min_size and p <= five_prime + max_size
+        if p > five_prime + (min_size or 0)
+        and (not max_size or p <= five_prime + max_size)
     ]
     if not downstream_positions:
         return five_prime, None
@@ -287,9 +288,9 @@ def define_boundaries(captain_hit, record, min_size, max_size,
     start = max(0, captain_start - 2000)
     end = min(contig_len, start + median_size)
 
-    if end - start < min_size:
+    if min_size and end - start < min_size:
         end = min(contig_len, start + min_size)
-    if end - start > max_size:
+    if max_size and end - start > max_size:
         end = start + max_size
 
     truncated = (start <= 10000) or (end >= contig_len - 1000)

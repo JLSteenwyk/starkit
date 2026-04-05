@@ -65,10 +65,10 @@ def create_parser() -> ArgumentParser:
                                                     (default: 1e-10)
 
         --min-size <bp>                             minimum predicted Starship size in bp
-                                                    (default: 15000)
+                                                    (default: no limit)
 
         --max-size <bp>                             maximum predicted Starship size in bp
-                                                    (default: 700000)
+                                                    (default: no limit)
 
         --evidence <level>                          minimum evidence level to report
                                                     high, medium, low, all (default: all)

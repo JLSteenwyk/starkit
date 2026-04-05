@@ -204,7 +204,9 @@ def run(
     homology_added = 0
     for hit in homology_hits:
         hit_size = hit.end - hit.start
-        if hit_size < min_size or hit_size > max_size:
+        if min_size and hit_size < min_size:
+            continue
+        if max_size and hit_size > max_size:
             continue
         if _homology_hit_used_by_captain(hit, starship_results):
             continue

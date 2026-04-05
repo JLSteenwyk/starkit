@@ -27,8 +27,8 @@ def test_process_args_defaults():
         assert result["input_file"] == tmpfile
         assert result["output_prefix"] == f"{tmpfile}.starkit"
         assert result["evalue"] == 1e-10
-        assert result["min_size"] == 15000
-        assert result["max_size"] == 700000
+        assert result["min_size"] == 0
+        assert result["max_size"] == 0
         assert result["evidence"] == "all"
     finally:
         os.unlink(tmpfile)

@@ -22,7 +22,9 @@ def write_user_args(
     logger.info(f"  Output prefix: {output_prefix}")
     logger.info(f"  GFF3 file: {gff_file}")
     logger.info(f"  E-value threshold: {evalue}")
-    logger.info(f"  Size range: {min_size} - {max_size} bp")
+    min_str = f"{min_size}" if min_size else "none"
+    max_str = f"{max_size}" if max_size else "none"
+    logger.info(f"  Size range: {min_str} - {max_str} bp")
     logger.info(f"  Evidence filter: {evidence}")
 
 
