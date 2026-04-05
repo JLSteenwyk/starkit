@@ -713,6 +713,12 @@ table.params td {
     </td>
 </tr>
 <tr><th>Truncated</th><td>{{ "Yes" if s.truncated else "No" }}</td></tr>
+{% if s.nested_in %}
+<tr><th>Nested inside</th><td>{{ s.nested_in }}</td></tr>
+{% endif %}
+{% if s.additional_captains %}
+<tr><th>Additional captains</th><td>{{ s.additional_captains | map(attribute='protein_id') | join(', ') }}</td></tr>
+{% endif %}
 </table>
 
 <!-- Cargo genes -->

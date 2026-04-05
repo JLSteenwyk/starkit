@@ -47,6 +47,7 @@ def write_output_stats(starkit_run: StarKITRun, start_time: float):
     logger.info("")
     logger.info("  Output files:")
     logger.info(f"    {output_prefix}.tsv")
+    logger.info(f"    {output_prefix}.fasta")
     logger.info(f"    {output_prefix}.html")
     logger.info(f"\n  Execution time: {elapsed:.2f}s")
 
@@ -67,11 +68,14 @@ def write_tsv(starkit_run: StarKITRun, output_prefix: str):
         "family_score",
         "evidence_level",
         "confidence_score",
+        "boundary_method",
         "tir_left",
         "tir_right",
         "tsd_sequence",
         "cargo_gene_count",
         "truncated",
+        "novelty",
+        "nested_in",
     ])
 
     with open(output_file, "w") as f:
@@ -90,6 +94,8 @@ def write_tsv(starkit_run: StarKITRun, output_prefix: str):
             )
             tsd_sequence = result.tsd or "NA"
 
+            novelty = "new" if result.is_novel else "known"
+
             row = "\t".join([
                 result.starship_id,
                 result.contig_id,
@@ -102,12 +108,41 @@ def write_tsv(starkit_run: StarKITRun, output_prefix: str):
                 f"{result.family_score:.1f}",
                 result.evidence_level.value,
                 f"{result.confidence_score:.4f}",
+                result.boundary_method,
                 tir_left,
                 tir_right,
                 tsd_sequence,
                 str(len(result.cargo_genes)),
                 str(result.truncated),
+                novelty,
+                result.nested_in or "NA",
             ])
             f.write(row + "\n")
 
     logger.info(f"  Results written to {output_file}")
+
+
+def write_fasta(starkit_run: StarKITRun, output_prefix: str):
+    """Write predicted Starship nucleotide sequences to a FASTA file.
+
+    Each Starship is extracted from its contig and written as a separate
+    entry. Header format: >starship_id contig:start-end family=X size=Xbp
+    """
+    output_file = f"{output_prefix}.fasta"
+
+    with open(output_file, "w") as f:
+        for result in starkit_run.starships:
+            seq = str(result.region.seq[result.start:result.end])
+            header = (
+                f">{result.starship_id} "
+                f"{result.contig_id}:{result.start}-{result.end} "
+                f"family={result.captain_family} "
+                f"size={result.size}bp "
+                f"evidence={result.evidence_level.value}"
+            )
+            f.write(header + "\n")
+            # Write sequence in 80-character lines
+            for i in range(0, len(seq), 80):
+                f.write(seq[i:i + 80] + "\n")
+
+    logger.info(f"  Sequences written to {output_file}")

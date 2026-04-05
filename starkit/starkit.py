@@ -25,7 +25,8 @@ from .settings import (
     CAPTAIN_HMM_DIR, BOUNDARY_DATA_DIR, FAMILY_HMM_DIR, STARSHIP_REF_FASTA,
 )
 from .version import __version__ as current_version
-from .write import write_user_args, write_output_stats, write_tsv
+from .dedup import resolve_overlaps
+from .write import write_user_args, write_output_stats, write_tsv, write_fasta
 
 
 def _write_temp_fasta(records):
@@ -264,7 +265,10 @@ def run(
         if pid in captain_classifications:
             result.captain_family, result.family_score = captain_classifications[pid]
 
-    # Step 7: Score confidence
+    # Step 7: Resolve overlapping predictions
+    starship_results = resolve_overlaps(starship_results)
+
+    # Step 8: Score confidence
     score_starships(starship_results)
 
     # Filter by evidence level
@@ -330,6 +334,7 @@ def execute(
 
     # Write output
     write_tsv(starkit_run, output_prefix)
+    write_fasta(starkit_run, output_prefix)
     generate_report(starkit_run, output_prefix)
 
     # Display stats
