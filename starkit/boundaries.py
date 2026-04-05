@@ -19,6 +19,7 @@ from .settings import (
     MIN_TIR_LENGTH,
     MIN_TIR_IDENTITY,
     TIR_SCAN_WINDOW,
+    TIR_SEED_K,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,16 +245,36 @@ def find_tirs_denovo(upstream_seq, downstream_seq,
                      min_length=MIN_TIR_LENGTH,
                      min_identity=MIN_TIR_IDENTITY,
                      scan_window=TIR_SCAN_WINDOW):
-    """De novo inverted repeat detection via k-mer seeding + extension."""
+    """De novo inverted repeat detection with mismatch-tolerant extension.
+
+    Uses short k-mer seeds (6bp) to find candidate matches between the
+    upstream boundary and the reverse-complement of the downstream boundary,
+    then extends with mismatch tolerance (up to 30% mismatches). This catches
+    imperfect TIRs that have diverged over time.
+
+    Parameters
+    ----------
+    upstream_seq : str
+        Sequence at the 5' boundary region.
+    downstream_seq : str
+        Sequence at the 3' boundary region.
+    min_length : int
+        Minimum total TIR length to report (default 8).
+    min_identity : float
+        Minimum fraction of matching bases in the TIR (default 0.70).
+    scan_window : int
+        How many bp to scan at each boundary (default 1000).
+    """
     up = upstream_seq[:scan_window].upper()
     down_raw = downstream_seq[-scan_window:] if len(downstream_seq) >= scan_window else downstream_seq
     down = down_raw.upper()
     rc_down = reverse_complement(down)
 
-    k = min_length
+    k = TIR_SEED_K
     if len(up) < k or len(rc_down) < k:
         return None, None
 
+    # Build k-mer index from reverse-complemented downstream
     kmer_index = {}
     for i in range(len(rc_down) - k + 1):
         kmer = rc_down[i:i + k]
@@ -262,32 +283,73 @@ def find_tirs_denovo(upstream_seq, downstream_seq,
         kmer_index.setdefault(kmer, []).append(i)
 
     best_match = None
-    best_length = 0
+    best_score = 0  # score = matches - mismatches
 
     for i in range(len(up) - k + 1):
         kmer = up[i:i + k]
         if "N" in kmer or kmer not in kmer_index:
             continue
         for j in kmer_index[kmer]:
+            # Extend with mismatch tolerance
+            matches = k
+            mismatches = 0
             length = k
-            while (i + length < len(up) and j + length < len(rc_down)
-                   and up[i + length] == rc_down[j + length]
-                   and up[i + length] != "N"):
-                length += 1
-            if length > best_length:
-                best_length = length
-                best_match = (i, j, length)
+            max_mismatches_in_row = 0
+            consecutive_mismatches = 0
 
-    if best_match is None or best_length < min_length:
+            while i + length < len(up) and j + length < len(rc_down):
+                a = up[i + length]
+                b = rc_down[j + length]
+                if a == "N" or b == "N":
+                    break
+                if a == b:
+                    matches += 1
+                    consecutive_mismatches = 0
+                else:
+                    mismatches += 1
+                    consecutive_mismatches += 1
+                    # Stop if 3+ mismatches in a row (left the TIR region)
+                    if consecutive_mismatches >= 3:
+                        # Back up to remove trailing mismatches
+                        matches -= 0
+                        length -= (consecutive_mismatches - 1)
+                        mismatches -= (consecutive_mismatches - 1)
+                        break
+                length += 1
+
+                # Stop if identity drops below threshold
+                if length > min_length and matches / length < min_identity:
+                    length -= 1
+                    if up[i + length] != rc_down[j + length]:
+                        mismatches -= 1
+                    else:
+                        matches -= 1
+                    break
+
+            total_len = length
+            if total_len < min_length:
+                continue
+            identity = matches / total_len if total_len > 0 else 0
+            if identity < min_identity:
+                continue
+
+            # Score: prefer longer TIRs with higher identity
+            score = matches + (identity * total_len * 0.5)
+            if score > best_score:
+                best_score = score
+                best_match = (i, j, total_len, matches, mismatches)
+
+    if best_match is None:
         return None, None
 
-    i, j, length = best_match
-    tir_seq = up[i:i + length]
+    i, j, length, matches, mismatches = best_match
+    tir_seq_up = up[i:i + length]
+    identity = matches / length
 
     down_offset = len(downstream_seq) - scan_window + j if len(downstream_seq) >= scan_window else j
 
-    tir_left = (i, i + length, tir_seq)
-    tir_right = (down_offset, down_offset + length, reverse_complement(tir_seq))
+    tir_left = (i, i + length, tir_seq_up)
+    tir_right = (down_offset, down_offset + length, reverse_complement(tir_seq_up))
 
     return tir_left, tir_right
 

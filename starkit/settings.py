@@ -9,9 +9,10 @@ DEFAULT_TSD_MOTIF = "TTAC"
 DEFAULT_TSD_CONSENSUS_REGEX = r"TTAC.{7}A"
 
 # De novo TIR detection
-MIN_TIR_LENGTH = 10
+MIN_TIR_LENGTH = 8
 MIN_TIR_IDENTITY = 0.70
-TIR_SCAN_WINDOW = 500
+TIR_SCAN_WINDOW = 1000
+TIR_SEED_K = 6  # k-mer seed size for initial matching
 
 # Data paths (relative to package)
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
