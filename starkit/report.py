@@ -87,6 +87,8 @@ def generate_svg_diagram(
         strand: int,
         fill: str,
         label: str = "",
+        data_tooltip: str = "",
+        css_class: str = "",
     ) -> None:
         x1 = x_of(g_start)
         x2 = x_of(g_end)
@@ -122,9 +124,16 @@ def generate_svg_diagram(
                 f"{rx},{bot}"
             )
 
+        extra_attrs = ""
+        if data_tooltip:
+            extra_attrs += f' data-tooltip="{data_tooltip}"'
+        if css_class:
+            extra_attrs += f' class="{css_class}"'
+
         lines.append(
             f'  <polygon points="{pts}" '
-            f'fill="{fill}" stroke="#333" stroke-width="0.4" opacity="0.9"/>'
+            f'fill="{fill}" stroke="#333" stroke-width="0.4" opacity="0.9"'
+            f'{extra_attrs}/>'
         )
         # Label: inside the arrow if it fits, above the arrow otherwise
         if label:
@@ -145,16 +154,30 @@ def generate_svg_diagram(
     # Draw cargo genes first (below captain)
     for cargo in starship_result.cargo_genes:
         fill = "#4B77BE" if cargo.strand >= 0 else "#6BAADB"
-        _gene_arrow(cargo.start, cargo.end, cargo.strand, fill)
+        strand_str = "+" if cargo.strand >= 0 else "-"
+        tooltip = (
+            f"{cargo.gene_id}|{cargo.product}|"
+            f"{cargo.start:,}-{cargo.end:,}|{strand_str}"
+        )
+        _gene_arrow(cargo.start, cargo.end, cargo.strand, fill,
+                     data_tooltip=tooltip, css_class="gene-hover")
 
     # Draw captain gene on top
     captain = starship_result.captain
+    captain_strand = "+" if captain.strand >= 0 else "-"
+    captain_tooltip = (
+        f"{captain.protein_id}|Captain ({starship_result.captain_family})|"
+        f"{captain.start:,}-{captain.end:,}|{captain_strand}|"
+        f"e-value: {captain.evalue:.2e}"
+    )
     _gene_arrow(
         captain.start,
         captain.end,
         captain.strand,
         "#c77c11",
         label="Captain",
+        data_tooltip=captain_tooltip,
+        css_class="gene-hover",
     )
 
     # TIR markers (small filled rectangles at the boundaries)
@@ -163,10 +186,12 @@ def generate_svg_diagram(
         tir = starship_result.tir_left
         tx = x_of(tir.start)
         ty = track_y + (track_h - tir_h) / 2
+        tir_tip = f"Left TIR|{tir.sequence}|{tir.start:,}-{tir.end:,}"
         lines.append(
             f'  <rect x="{tx - tir_w / 2:.1f}" y="{ty:.1f}" '
             f'width="{tir_w}" height="{tir_h}" '
-            f'fill="{tir_color}" opacity="0.85" rx="1"/>'
+            f'fill="{tir_color}" opacity="0.85" rx="1" '
+            f'class="gene-hover" data-tooltip="{tir_tip}"/>'
         )
         lines.append(
             f'  <text x="{tx:.1f}" y="{ty - 2:.1f}" '
@@ -178,10 +203,12 @@ def generate_svg_diagram(
         tir = starship_result.tir_right
         tx = x_of(tir.end)
         ty = track_y + (track_h - tir_h) / 2
+        tir_tip = f"Right TIR|{tir.sequence}|{tir.start:,}-{tir.end:,}"
         lines.append(
             f'  <rect x="{tx - tir_w / 2:.1f}" y="{ty:.1f}" '
             f'width="{tir_w}" height="{tir_h}" '
-            f'fill="{tir_color}" opacity="0.85" rx="1"/>'
+            f'fill="{tir_color}" opacity="0.85" rx="1" '
+            f'class="gene-hover" data-tooltip="{tir_tip}"/>'
         )
         lines.append(
             f'  <text x="{tx:.1f}" y="{ty - 2:.1f}" '
@@ -454,6 +481,37 @@ table.detail-table td.num {
 }
 .mono { font-family: monospace; font-size: 12px; word-break: break-all; }
 
+/* ---- Gene tooltip ---- */
+.gene-hover { cursor: pointer; }
+.gene-hover:hover { opacity: 0.7 !important; filter: brightness(1.1); }
+#gene-tooltip {
+    display: none;
+    position: fixed;
+    background: #333;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 5px;
+    font-size: 12px;
+    line-height: 1.5;
+    max-width: 340px;
+    pointer-events: none;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    font-family: Oxygen, Garamond, Georgia, serif;
+}
+#gene-tooltip .tt-label {
+    font-weight: 600;
+    color: #c77c11;
+    margin-right: 4px;
+}
+#gene-tooltip .tt-row {
+    white-space: nowrap;
+}
+#gene-tooltip .tt-product {
+    font-style: italic;
+    color: #ccc;
+}
+
 /* ---- Parameters ---- */
 .params-section {
     margin-bottom: 28px;
@@ -671,6 +729,9 @@ table.params td {
 
 </div><!-- /.container -->
 
+<!-- Tooltip element -->
+<div id="gene-tooltip"></div>
+
 <script>
 /* ---- Table sorting ---- */
 (function() {
@@ -730,6 +791,54 @@ function toggleDetail(header) {
         header.classList.add("open");
     }
 }
+
+/* ---- Gene tooltips ---- */
+(function() {
+    var tooltip = document.getElementById("gene-tooltip");
+    if (!tooltip) return;
+
+    function formatTooltip(data) {
+        // data format: "geneID|product|coords|strand" or with extra "|e-value: X"
+        var parts = data.split("|");
+        var html = "";
+        if (parts[0]) html += '<div class="tt-row"><span class="tt-label">ID:</span> ' + parts[0] + '</div>';
+        if (parts[1]) html += '<div class="tt-row"><span class="tt-label">Product:</span> <span class="tt-product">' + parts[1] + '</span></div>';
+        if (parts[2]) html += '<div class="tt-row"><span class="tt-label">Coordinates:</span> ' + parts[2] + '</div>';
+        if (parts[3]) html += '<div class="tt-row"><span class="tt-label">Strand:</span> ' + parts[3] + '</div>';
+        if (parts[4]) html += '<div class="tt-row"><span class="tt-label">' + parts[4] + '</span></div>';
+        return html;
+    }
+
+    document.addEventListener("mouseover", function(e) {
+        var el = e.target.closest(".gene-hover");
+        if (!el) return;
+        var data = el.getAttribute("data-tooltip");
+        if (!data) return;
+        tooltip.innerHTML = formatTooltip(data);
+        tooltip.style.display = "block";
+    });
+
+    document.addEventListener("mousemove", function(e) {
+        if (tooltip.style.display === "block") {
+            var x = e.clientX + 14;
+            var y = e.clientY + 14;
+            // Keep tooltip on screen
+            var tw = tooltip.offsetWidth;
+            var th = tooltip.offsetHeight;
+            if (x + tw > window.innerWidth - 10) x = e.clientX - tw - 10;
+            if (y + th > window.innerHeight - 10) y = e.clientY - th - 10;
+            tooltip.style.left = x + "px";
+            tooltip.style.top = y + "px";
+        }
+    });
+
+    document.addEventListener("mouseout", function(e) {
+        var el = e.target.closest(".gene-hover");
+        if (el) {
+            tooltip.style.display = "none";
+        }
+    });
+})();
 </script>
 </body>
 </html>
