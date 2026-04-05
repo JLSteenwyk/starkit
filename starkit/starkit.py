@@ -124,6 +124,7 @@ def run(
     evidence,
     use_log,
     quiet,
+    no_homology=False,
 ):
     """Core pipeline: parse input -> detect captains -> homology search ->
     tiered boundary detection -> extract cargo -> classify -> score."""
@@ -134,6 +135,17 @@ def run(
 
     # Step 2: Detect captain genes
     captain_hits = detect_captains(records, CAPTAIN_HMM_DIR, evalue)
+
+    # Step 2b: Classify captains early (needed for family-specific DR scanning)
+    family_hmm_dir = FAMILY_HMM_DIR
+    if captain_hits and os.path.isdir(family_hmm_dir) and os.listdir(family_hmm_dir):
+        from .classify import classify_captain, load_family_hmms
+        family_hmms = load_family_hmms(family_hmm_dir)
+        for captain in captain_hits:
+            family_name, family_score = classify_captain(
+                captain, records, family_hmms,
+            )
+            captain.hmm_name = family_name
 
     # Load reference data for boundary detection
     pwm_file = os.path.join(BOUNDARY_DATA_DIR, "tir_pwms.json")
@@ -147,7 +159,7 @@ def run(
     homology_hits = []
     genome_fasta = None
     try:
-        if os.path.exists(STARSHIP_REF_FASTA):
+        if not no_homology and os.path.exists(STARSHIP_REF_FASTA):
             genome_fasta = _write_temp_fasta(records)
             from .homology import search_homology, merge_overlapping_hits
             raw_hits = search_homology(
@@ -307,10 +319,11 @@ def execute(
     )
 
     # Run the pipeline
+    no_homology = kwargs.get("no_homology", False)
     starkit_run = run(
         input_file, output_prefix, gff_file,
         evalue, min_size, max_size, evidence,
-        use_log, quiet,
+        use_log, quiet, no_homology=no_homology,
     )
 
     # Write output

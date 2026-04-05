@@ -27,6 +27,7 @@ def process_args(args) -> dict:
     evidence = args.evidence or "all"
     use_log = args.log or False
     quiet = args.quiet or False
+    no_homology = getattr(args, "no_homology", False) or False
 
     return dict(
         input_file=input_file,
@@ -38,4 +39,5 @@ def process_args(args) -> dict:
         evidence=evidence,
         use_log=use_log,
         quiet=quiet,
+        no_homology=no_homology,
     )

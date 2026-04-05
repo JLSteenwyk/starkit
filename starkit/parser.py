@@ -73,6 +73,9 @@ def create_parser() -> ArgumentParser:
         --evidence <level>                          minimum evidence level to report
                                                     high, medium, low, all (default: all)
 
+        --no-homology                               disable homology-based detection
+                                                    (captain + DR boundaries only)
+
         -l, --log                                   creates a log file
 
         -q, --quiet                                 suppress stdout messages
@@ -127,6 +130,13 @@ def create_parser() -> ArgumentParser:
         choices=evidence_choices,
         help=SUPPRESS,
         metavar="evidence level",
+    )
+
+    optional.add_argument(
+        "--no-homology",
+        action="store_true",
+        required=False,
+        help=SUPPRESS,
     )
 
     optional.add_argument(
