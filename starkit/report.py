@@ -357,6 +357,8 @@ a:hover { text-decoration: underline; }
 .badge-high   { background: #0b81d5; }
 .badge-medium { background: #c77c11; }
 .badge-low    { background: #999; }
+.badge-known  { background: #6c757d; }
+.badge-new    { background: #28a745; }
 
 /* ---- Summary table ---- */
 .summary-section h2 {
@@ -591,6 +593,10 @@ table.params td {
         <div class="value">{{ counts.low }}</div>
         <div class="label"><span class="badge badge-low">Low</span> evidence</div>
     </div>
+    <div class="stat-card">
+        <div class="value">{{ counts.novel }}</div>
+        <div class="label"><span class="badge badge-new">New</span> to Starbase</div>
+    </div>
 </div>
 
 <!-- ===== Parameters ===== -->
@@ -620,6 +626,7 @@ table.params td {
     <th data-type="str">Family <span class="sort-arrow"></span></th>
     <th data-type="str">Evidence <span class="sort-arrow"></span></th>
     <th data-type="num">Confidence <span class="sort-arrow"></span></th>
+    <th data-type="str">Novelty <span class="sort-arrow"></span></th>
     <th data-type="num">Cargo <span class="sort-arrow"></span></th>
 </tr>
 </thead>
@@ -637,6 +644,13 @@ table.params td {
         <span class="badge badge-{{ s.evidence_level.value }}">{{ s.evidence_level.value }}</span>
     </td>
     <td class="num">{{ "%.3f" | format(s.confidence_score) }}</td>
+    <td>
+        {% if s.homology_identity >= 0.80 and s.homology_coverage >= 0.50 %}
+        <span class="badge badge-known">Known</span>
+        {% else %}
+        <span class="badge badge-new">New</span>
+        {% endif %}
+    </td>
     <td class="num">{{ s.cargo_genes | length }}</td>
 </tr>
 {% endfor %}
@@ -687,6 +701,17 @@ table.params td {
     <td class="mono">{% if s.tir_right %}{{ s.tir_right.sequence }} ({{ "{:,}".format(s.tir_right.start) }}&ndash;{{ "{:,}".format(s.tir_right.end) }}){% else %}not detected{% endif %}</td>
 </tr>
 <tr><th>Confidence score</th><td>{{ "%.4f" | format(s.confidence_score) }}</td></tr>
+<tr><th>Boundary method</th><td>{{ s.boundary_method }}</td></tr>
+<tr>
+    <th>Starbase novelty</th>
+    <td>
+        {% if s.homology_identity >= 0.80 and s.homology_coverage >= 0.50 %}
+        <span class="badge badge-known">Known</span> &mdash; matches Starbase reference ({{ "%.0f" | format(s.homology_identity * 100) }}% identity, {{ "%.0f" | format(s.homology_coverage * 100) }}% coverage)
+        {% else %}
+        <span class="badge badge-new">New</span> &mdash; no significant match in Starbase
+        {% endif %}
+    </td>
+</tr>
 <tr><th>Truncated</th><td>{{ "Yes" if s.truncated else "No" }}</td></tr>
 </table>
 
@@ -870,11 +895,13 @@ def generate_report(
     """
     starships: List[StarshipResult] = starkit_run.starships
 
-    # Compute evidence-level counts
-    counts = {"high": 0, "medium": 0, "low": 0}
+    # Compute evidence-level counts and novelty
+    counts = {"high": 0, "medium": 0, "low": 0, "novel": 0}
     for s in starships:
-        level_key = s.evidence_level.value  # "high", "medium", or "low"
+        level_key = s.evidence_level.value
         counts[level_key] = counts.get(level_key, 0) + 1
+        if not (s.homology_identity >= 0.80 and s.homology_coverage >= 0.50):
+            counts["novel"] += 1
 
     # Pre-render SVG diagrams
     svg_diagrams = [generate_svg_diagram(s) for s in starships]
