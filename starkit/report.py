@@ -180,6 +180,24 @@ def generate_svg_diagram(
         css_class="gene-hover",
     )
 
+    # Draw additional captains (from merged duplicates) in a darker amber
+    for extra_captain in starship_result.additional_captains:
+        ec_strand = "+" if extra_captain.strand >= 0 else "-"
+        ec_tooltip = (
+            f"{extra_captain.protein_id}|Additional captain ({extra_captain.hmm_name})|"
+            f"{extra_captain.start:,}-{extra_captain.end:,}|{ec_strand}|"
+            f"e-value: {extra_captain.evalue:.2e}"
+        )
+        _gene_arrow(
+            extra_captain.start,
+            extra_captain.end,
+            extra_captain.strand,
+            "#a06010",
+            label="Captain*",
+            data_tooltip=ec_tooltip,
+            css_class="gene-hover",
+        )
+
     # TIR markers (small filled rectangles at the boundaries)
     tir_color = "#0b81d5"
     if starship_result.tir_left is not None:
