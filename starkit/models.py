@@ -58,6 +58,9 @@ class StarshipResult:
     confidence_score: float = 0.0
     evidence_level: EvidenceLevel = EvidenceLevel.LOW
     truncated: bool = False
+    boundary_method: str = "estimated"  # "homology", "dr_motif", or "estimated"
+    homology_identity: float = 0.0     # 0-1, from homology alignment
+    homology_coverage: float = 0.0     # 0-1, from homology alignment
 
     @property
     def size(self) -> int:

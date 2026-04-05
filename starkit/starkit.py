@@ -76,6 +76,9 @@ def _homology_hit_to_starship(hit, record, idx, cargo_genes):
         confidence_score=0.0,
         evidence_level=EvidenceLevel.LOW,
         truncated=False,
+        boundary_method="homology",
+        homology_identity=hit.identity,
+        homology_coverage=hit.coverage,
     )
 
 
@@ -196,6 +199,9 @@ def run(
             tsd=boundary["tsd"],
             cargo_genes=cargo_genes,
             truncated=boundary["truncated"],
+            boundary_method=boundary.get("boundary_method", "estimated"),
+            homology_identity=best_homology.identity if best_homology else 0.0,
+            homology_coverage=best_homology.coverage if best_homology else 0.0,
         )
         starship_results.append(result)
 
