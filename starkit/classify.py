@@ -131,7 +131,8 @@ def classify_captain(
     best_score = 0.0
 
     for top_hits in pyhmmer.hmmsearch(family_hmms, [seq]):
-        family_name = top_hits.query_name.decode()
+        query_name = top_hits.query.name
+        family_name = query_name.decode() if isinstance(query_name, bytes) else str(query_name)
         for hit in top_hits:
             if hit.included and hit.score > best_score:
                 best_score = hit.score

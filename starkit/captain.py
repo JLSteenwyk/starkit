@@ -100,10 +100,12 @@ def search_captains(
     captain_hits: List[CaptainHit] = []
 
     for top_hits in pyhmmer.hmmsearch(hmm_profiles, sequences):
-        hmm_name = top_hits.query_name.decode()
+        query_name = top_hits.query.name
+        hmm_name = query_name.decode() if isinstance(query_name, bytes) else str(query_name)
         for hit in top_hits:
             if hit.included and hit.evalue <= evalue_threshold:
-                protein_id = hit.name.decode()
+                hit_name = hit.name
+                protein_id = hit_name.decode() if isinstance(hit_name, bytes) else str(hit_name)
                 contig_id, feature = protein_lookup[protein_id]
 
                 location = feature.location
