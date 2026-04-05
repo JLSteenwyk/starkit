@@ -109,6 +109,107 @@ def find_dr_pair(sequence, captain_start_in_seq, motif, min_size, max_size):
     return five_prime, three_prime
 
 
+def find_dr_from_library(sequence, captain_start_in_seq, dr_library,
+                         family_size_median, size_tolerance=0.6):
+    """Search for known DR sequences from a family-specific library.
+
+    For each known DR, finds occurrences upstream of the captain (5' end),
+    then searches downstream for the same DR or close variants to define
+    the 3' boundary. Candidates are scored by DR length and proximity to
+    the family median size.
+
+    Parameters
+    ----------
+    sequence : str
+        Full contig sequence.
+    captain_start_in_seq : int
+        Captain gene start position (0-based).
+    dr_library : set of str
+        Known DR sequences for this family from Starbase.
+    family_size_median : int
+        Median element size for this family.
+    size_tolerance : float
+        Fraction of median size to allow as deviation (default 0.6 = ±60%).
+
+    Returns
+    -------
+    tuple of (five_prime_pos, three_prime_pos, five_dr_seq, three_dr_seq)
+        or (None, None, None, None) if no pair found.
+    """
+    if not dr_library:
+        return None, None, None, None
+
+    seq_upper = sequence.upper()
+    min_size = max(5000, int(family_size_median * (1 - size_tolerance)))
+    max_size = int(family_size_median * (1 + size_tolerance))
+
+    up_start = max(0, captain_start_in_seq - DEFAULT_UPSTREAM_SCAN)
+    upstream = seq_upper[up_start:captain_start_in_seq]
+
+    best = None
+    best_score = 0
+
+    for dr_seq in dr_library:
+        if len(dr_seq) < 4:
+            continue
+
+        # Find occurrences of this DR upstream of captain
+        pos = 0
+        while True:
+            idx = upstream.find(dr_seq, pos)
+            if idx == -1:
+                break
+            five_prime_pos = up_start + idx
+
+            # Build a set of sequences to search for at the 3' end:
+            # the same DR plus variants (±1bp from start/end)
+            search_variants = {dr_seq}
+            if len(dr_seq) >= 5:
+                search_variants.add(dr_seq[1:])      # trim first base
+                search_variants.add(dr_seq[:-1])      # trim last base
+            # Also add other library DRs that share a core with this one
+            for other_dr in dr_library:
+                if len(other_dr) >= 4 and (
+                    dr_seq.startswith(other_dr) or other_dr.startswith(dr_seq)
+                    or dr_seq.endswith(other_dr) or other_dr.endswith(dr_seq)
+                ):
+                    search_variants.add(other_dr)
+
+            search_start = five_prime_pos + min_size
+            search_end = min(len(seq_upper), five_prime_pos + max_size)
+            if search_start >= search_end:
+                pos = idx + 1
+                continue
+
+            downstream = seq_upper[search_start:search_end]
+
+            for variant in search_variants:
+                dpos = 0
+                while True:
+                    didx = downstream.find(variant, dpos)
+                    if didx == -1:
+                        break
+                    three_prime_pos = search_start + didx + len(variant)
+                    element_size = three_prime_pos - five_prime_pos
+
+                    size_ratio = element_size / family_size_median
+                    match_bonus = 1.0 if variant == dr_seq else 0.8
+                    score = len(dr_seq) * match_bonus * (1.0 - abs(1.0 - size_ratio) * 0.3)
+
+                    if score > best_score:
+                        best_score = score
+                        best = (five_prime_pos, three_prime_pos, dr_seq, variant)
+
+                    dpos = didx + 1
+
+            pos = idx + 1
+
+    if best is None:
+        return None, None, None, None
+
+    return best
+
+
 # --------------------------------------------------------------------------- #
 #  TIR detection
 # --------------------------------------------------------------------------- #
@@ -230,23 +331,26 @@ def define_boundaries(captain_hit, record, min_size, max_size,
         )
 
     # ------------------------------------------------------------------- #
-    # Tier 2: Family-specific DR scanning
+    # Tier 2: Family-specific DR library scanning
     # ------------------------------------------------------------------- #
     if family_ref:
         family_name = captain_hit.hmm_name
         fam_data = family_ref.get(family_name, {})
-        dr_motif = fam_data.get("dr_motif")
+        dr_library = fam_data.get("dr_library")
+        family_size_median = fam_data.get("size_median", 65000)
 
-        if dr_motif:
-            five_prime, three_prime = find_dr_pair(
-                seq, captain_start, dr_motif, min_size, max_size,
+        if dr_library:
+            result = find_dr_from_library(
+                seq, captain_start, set(dr_library),
+                family_size_median,
             )
+            five_pos, three_pos, five_dr, three_dr = result
 
-            if five_prime is not None and three_prime is not None:
-                start = five_prime
-                end = three_prime + len(dr_motif)
+            if five_pos is not None and three_pos is not None:
+                start = five_pos
+                end = three_pos
                 truncated = (start <= 10000) or (end >= contig_len - 1000)
-                tsd = seq[five_prime:five_prime + len(dr_motif)].upper()
+                tsd = five_dr
 
                 tir_left_result = None
                 tir_right_result = None
@@ -266,8 +370,8 @@ def define_boundaries(captain_hit, record, min_size, max_size,
                     )
 
                 logger.info(
-                    f"Tier 2 (DR '{dr_motif}'): {record.id}:{start}-{end} "
-                    f"({end - start:,} bp)"
+                    f"Tier 2 (DR library '{five_dr}'/'{three_dr}'): "
+                    f"{record.id}:{start}-{end} ({end - start:,} bp)"
                 )
                 return dict(
                     start=start, end=end,
