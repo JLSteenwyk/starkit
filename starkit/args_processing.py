@@ -22,8 +22,16 @@ def process_args(args) -> dict:
         sys.exit()
 
     evalue = float(args.evalue) if args.evalue is not None else DEFAULT_EVALUE
+    if evalue <= 0 or evalue > 1:
+        logger.warning("E-value must be between 0 (exclusive) and 1. Using default.")
+        evalue = DEFAULT_EVALUE
+
     min_size = int(args.min_size) if args.min_size is not None else DEFAULT_MIN_SIZE
     max_size = int(args.max_size) if args.max_size is not None else DEFAULT_MAX_SIZE
+    if min_size < 0:
+        min_size = 0
+    if max_size < 0:
+        max_size = 0
     evidence = args.evidence or "all"
     use_log = args.log or False
     quiet = args.quiet or False

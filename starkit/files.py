@@ -125,11 +125,17 @@ def parse_fasta_gff(fasta_file: str, gff_file: str) -> list[SeqRecord]:
             if "product" in attrs:
                 qualifiers["product"] = [attrs["product"]]
 
+            # Parse phase (reading frame offset) from column 8
+            phase_str = cols[7]
+            phase = int(phase_str) if phase_str in ("0", "1", "2") else 0
+
             # Build the location and translate CDS to protein
             location = SimpleLocation(start, end, strand=strand)
             record = records_dict[seqid]
             try:
                 nuc_seq = location.extract(record.seq)
+                if phase > 0:
+                    nuc_seq = nuc_seq[phase:]
                 protein_seq = nuc_seq.translate(table=1, to_stop=True)
                 qualifiers["translation"] = [str(protein_seq)]
             except Exception as e:

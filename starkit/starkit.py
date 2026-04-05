@@ -137,6 +137,8 @@ def run(
     captain_hits = detect_captains(records, CAPTAIN_HMM_DIR, evalue)
 
     # Step 2b: Classify captains early (needed for family-specific DR scanning)
+    #          Store results to apply to StarshipResults later without re-running.
+    captain_classifications = {}  # protein_id -> (family_name, family_score)
     family_hmm_dir = FAMILY_HMM_DIR
     if captain_hits and os.path.isdir(family_hmm_dir) and os.listdir(family_hmm_dir):
         from .classify import classify_captain, load_family_hmms
@@ -146,6 +148,7 @@ def run(
                 captain, records, family_hmms,
             )
             captain.hmm_name = family_name
+            captain_classifications[captain.protein_id] = (family_name, family_score)
 
     # Load reference data for boundary detection
     pwm_file = os.path.join(BOUNDARY_DATA_DIR, "tir_pwms.json")
@@ -255,12 +258,11 @@ def run(
             version=current_version,
         )
 
-    # Step 6: Classify families
-    family_hmm_dir = FAMILY_HMM_DIR
-    if os.path.isdir(family_hmm_dir) and os.listdir(family_hmm_dir):
-        captain_based = [r for r in starship_results if r.captain.hmm_name != "homology"]
-        if captain_based:
-            classify_starships(captain_based, records, family_hmm_dir)
+    # Step 6: Apply family classifications from Step 2b (no re-computation)
+    for result in starship_results:
+        pid = result.captain.protein_id
+        if pid in captain_classifications:
+            result.captain_family, result.family_score = captain_classifications[pid]
 
     # Step 7: Score confidence
     score_starships(starship_results)

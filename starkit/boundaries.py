@@ -311,7 +311,6 @@ def find_tirs_denovo(upstream_seq, downstream_seq,
                     # Stop if 3+ mismatches in a row (left the TIR region)
                     if consecutive_mismatches >= 3:
                         # Back up to remove trailing mismatches
-                        matches -= 0
                         length -= (consecutive_mismatches - 1)
                         mismatches -= (consecutive_mismatches - 1)
                         break
@@ -344,12 +343,22 @@ def find_tirs_denovo(upstream_seq, downstream_seq,
 
     i, j, length, matches, mismatches = best_match
     tir_seq_up = up[i:i + length]
-    identity = matches / length
 
-    down_offset = len(downstream_seq) - scan_window + j if len(downstream_seq) >= scan_window else j
+    # Map j (index in rc_down) back to downstream_seq coordinates.
+    # rc_down is the reverse complement of down (last scan_window bp).
+    # Position j in rc_down corresponds to position (len(down)-1-j) in down,
+    # counted from the start of the extracted window.
+    down_window_start = max(0, len(downstream_seq) - scan_window)
+    down_len = len(down)
+    # The right TIR in the original sequence spans:
+    #   start = down_window_start + (down_len - j - length)
+    #   end   = down_window_start + (down_len - j)
+    right_start = down_window_start + (down_len - j - length)
+    right_end = down_window_start + (down_len - j)
+    right_seq = downstream_seq[right_start:right_end].upper()
 
     tir_left = (i, i + length, tir_seq_up)
-    tir_right = (down_offset, down_offset + length, reverse_complement(tir_seq_up))
+    tir_right = (right_start, right_end, right_seq)
 
     return tir_left, tir_right
 
@@ -482,12 +491,16 @@ def _find_structural_features(seq, start, end, captain_start,
     if family_ref and captain_hit:
         family_name = captain_hit.hmm_name
         fam_data = family_ref.get(family_name, {})
-        dr_motif = fam_data.get("dr_motif")
-        if dr_motif:
-            flank_5 = seq[max(0, start - 20):start + 50].upper()
-            flank_3 = seq[max(0, end - 50):end + 20].upper()
-            if dr_motif in flank_5 and dr_motif in flank_3:
-                tsd = dr_motif
+        dr_library = fam_data.get("dr_library", [])
+        # Check if any known DR is AT the boundary (within 5bp of start/end)
+        for dr_seq in dr_library:
+            if len(dr_seq) < 4:
+                continue
+            near_5 = seq[max(0, start - 5):start + len(dr_seq) + 5].upper()
+            near_3 = seq[max(0, end - len(dr_seq) - 5):end + 5].upper()
+            if dr_seq in near_5 and dr_seq in near_3:
+                tsd = dr_seq
+                break
 
     boundary_up = seq[start:start + TIR_SCAN_WINDOW]
     boundary_down = seq[max(0, end - TIR_SCAN_WINDOW):end]
