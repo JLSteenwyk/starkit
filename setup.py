@@ -22,6 +22,7 @@ REQUIRES = [
     "pyhmmer>=0.10.0",
     "numpy>=1.24.0",
     "jinja2>=3.1.0",
+    "mappy>=2.24",
 ]
 
 setup(

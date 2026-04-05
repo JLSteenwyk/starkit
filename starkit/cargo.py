@@ -45,8 +45,12 @@ def extract_cargo(
     """
     cargo_genes: List[CargoGene] = []
 
-    captain_start = int(captain_feature.location.start)
-    captain_end = int(captain_feature.location.end)
+    if captain_feature is not None:
+        captain_start = int(captain_feature.location.start)
+        captain_end = int(captain_feature.location.end)
+    else:
+        captain_start = None
+        captain_end = None
 
     for feature in record.features:
         if feature.type != "CDS":
@@ -60,7 +64,7 @@ def extract_cargo(
             continue
 
         # Exclude the captain gene by matching its location
-        if feat_start == captain_start and feat_end == captain_end:
+        if captain_start is not None and feat_start == captain_start and feat_end == captain_end:
             continue
 
         gene_id = feature.qualifiers.get(

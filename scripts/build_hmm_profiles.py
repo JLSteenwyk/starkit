@@ -20,7 +20,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-from collections import Counter, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 
 import pyhmmer
 
@@ -29,6 +29,7 @@ DB_PATH = sys.argv[1] if len(sys.argv) > 1 else "scripts/starbase_v0.1.0-pre.sql
 OUTPUT_HMM_DIR = os.path.join("starkit", "data", "hmm")
 OUTPUT_FAMILY_DIR = os.path.join("starkit", "data", "families")
 OUTPUT_BOUNDARY_DIR = os.path.join("starkit", "data", "boundaries")
+OUTPUT_STARSHIP_FASTA = os.path.join("starkit", "data", "starships_ref.fasta")
 MIN_SEQUENCES_FOR_HMM = 3  # minimum sequences to build a family HMM
 
 
@@ -309,6 +310,98 @@ def build_tir_pwms(conn, output_dir):
     return pwms
 
 
+def export_starship_reference_fasta(conn, output_path):
+    """
+    Extract all Starship nucleotide sequences from the ships table,
+    join with family information, and write a FASTA reference file
+    suitable for homology searches.
+
+    FASTA headers: >{ship_id}|{family_name}|{sequence_length}bp
+
+    Ships appearing in multiple joined_ships rows (different families) are
+    deduplicated by choosing one family deterministically (MIN).  Ships
+    without a family assignment are labelled 'unclassified'.
+
+    Returns a dict with summary statistics.
+    """
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            s.id,
+            s.sequence,
+            s.sequence_length,
+            MIN(fn.familyName) AS family_name
+        FROM ships s
+        LEFT JOIN joined_ships js ON s.id = js.ship_id
+        LEFT JOIN family_names fn ON js.ship_family_id = fn.id
+        WHERE s.sequence IS NOT NULL
+          AND s.sequence != ''
+        GROUP BY s.id
+        ORDER BY s.id
+    """)
+
+    rows = cursor.fetchall()
+
+    family_counts = Counter()
+    size_bins = Counter()
+    total = 0
+
+    SIZE_BIN_ORDER = ["<10kb", "10-50kb", "50-100kb", "100-200kb", "200-500kb", ">=500kb"]
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+    with open(output_path, "w") as fasta_out:
+        for ship_id, sequence, sequence_length, family_name in rows:
+            if family_name is None or family_name == "None" or family_name.strip() == "":
+                family_name = "unclassified"
+
+            seq_clean = sequence.strip()
+            if sequence_length is None:
+                sequence_length = len(seq_clean)
+
+            header = f">{ship_id}|{family_name}|{sequence_length}bp"
+            fasta_out.write(f"{header}\n")
+            for i in range(0, len(seq_clean), 80):
+                fasta_out.write(seq_clean[i : i + 80] + "\n")
+
+            family_counts[family_name] += 1
+            total += 1
+
+            if sequence_length < 10000:
+                size_bins["<10kb"] += 1
+            elif sequence_length < 50000:
+                size_bins["10-50kb"] += 1
+            elif sequence_length < 100000:
+                size_bins["50-100kb"] += 1
+            elif sequence_length < 200000:
+                size_bins["100-200kb"] += 1
+            elif sequence_length < 500000:
+                size_bins["200-500kb"] += 1
+            else:
+                size_bins[">=500kb"] += 1
+
+    stats = {
+        "total": total,
+        "family_counts": OrderedDict(family_counts.most_common()),
+        "size_distribution": OrderedDict(
+            (b, size_bins.get(b, 0)) for b in SIZE_BIN_ORDER if size_bins.get(b, 0) > 0
+        ),
+        "output_path": output_path,
+    }
+
+    print(f"  Total sequences: {stats['total']}")
+    print(f"  Output: {stats['output_path']}")
+    print(f"  Per-family counts:")
+    for family, count in stats["family_counts"].items():
+        print(f"    {family}: {count}")
+    print(f"  Size distribution:")
+    for size_bin, count in stats["size_distribution"].items():
+        print(f"    {size_bin}: {count}")
+
+    return stats
+
+
 def main():
     print(f"StarKIT HMM Profile Builder")
     print(f"Database: {DB_PATH}")
@@ -353,6 +446,12 @@ def main():
     for family, seqs in families.items():
         write_fasta(seqs, os.path.join(fasta_dir, f"captains_{family}.fasta"))
     print(f"Step 5: Exported FASTA files to {fasta_dir}/")
+    print()
+
+    # Step 6: Export Starship nucleotide reference FASTA
+    print("Step 6: Exporting Starship nucleotide reference FASTA...")
+    export_starship_reference_fasta(conn, OUTPUT_STARSHIP_FASTA)
+    print()
 
     conn.close()
     print()
