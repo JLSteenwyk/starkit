@@ -1,0 +1,153 @@
+{
+  "Enterprise": {
+    "family": "Enterprise",
+    "dr_motif": "AAGC",
+    "dr_examples": [
+      "AAGCCACACG",
+      "AAGCC",
+      "AAGCCACA",
+      "AAGCCAC"
+    ],
+    "dr_prevalence": 0.36,
+    "size_median": 77188,
+    "size_q25": 48153,
+    "size_q75": 94401,
+    "size_min": 17256,
+    "size_max": 304675,
+    "size_count": 97
+  },
+  "Moya": {
+    "family": "Moya",
+    "dr_motif": null,
+    "dr_prevalence": 0.0,
+    "size_median": 85132,
+    "size_q25": 63489,
+    "size_q75": 104967,
+    "size_min": 58066,
+    "size_max": 104967,
+    "size_count": 4
+  },
+  "Serenity": {
+    "family": "Serenity",
+    "dr_motif": null,
+    "dr_prevalence": 0.0,
+    "size_median": 142490,
+    "size_q25": 80985,
+    "size_q75": 206018,
+    "size_min": 18228,
+    "size_max": 373529,
+    "size_count": 11
+  },
+  "Phoenix": {
+    "family": "Phoenix",
+    "dr_motif": null,
+    "dr_prevalence": 0.0,
+    "size_median": 62279,
+    "size_q25": 38431,
+    "size_q75": 95942,
+    "size_min": 15184,
+    "size_max": 697938,
+    "size_count": 73
+  },
+  "Family-11": {
+    "family": "Family-11",
+    "dr_motif": null,
+    "dr_prevalence": 0.0,
+    "size_median": 20383,
+    "size_q25": 20383,
+    "size_q75": 20383,
+    "size_min": 20383,
+    "size_max": 20383,
+    "size_count": 1
+  },
+  "Tardis": {
+    "family": "Tardis",
+    "dr_motif": "TACG",
+    "dr_examples": [
+      "TACGGAGTA",
+      "TACGGAGTAA"
+    ],
+    "dr_prevalence": 0.26,
+    "size_median": 53008,
+    "size_q25": 26780,
+    "size_q75": 83138,
+    "size_min": 15020,
+    "size_max": 90227,
+    "size_count": 48
+  },
+  "Hephaestus": {
+    "family": "Hephaestus",
+    "dr_motif": "TTAC",
+    "dr_examples": [
+      "TTACA",
+      "TTACAA",
+      "TTACAAC"
+    ],
+    "dr_prevalence": 0.41,
+    "size_median": 53279,
+    "size_q25": 44103,
+    "size_q75": 63593,
+    "size_min": 7676,
+    "size_max": 218486,
+    "size_count": 70
+  },
+  "Prometheus": {
+    "family": "Prometheus",
+    "dr_motif": null,
+    "dr_prevalence": 0.0,
+    "size_median": 64967,
+    "size_q25": 43097,
+    "size_q75": 83899,
+    "size_min": 15311,
+    "size_max": 375703,
+    "size_count": 148
+  },
+  "Voyager": {
+    "family": "Voyager",
+    "dr_motif": null,
+    "dr_prevalence": 0.0,
+    "size_median": 77878,
+    "size_q25": 46677,
+    "size_q75": 97871,
+    "size_min": 16208,
+    "size_max": 129491,
+    "size_count": 20
+  },
+  "Galactica": {
+    "family": "Galactica",
+    "dr_motif": null,
+    "dr_prevalence": 0.0,
+    "size_median": 115543,
+    "size_q25": 56524,
+    "size_q75": 193898,
+    "size_min": 16098,
+    "size_max": 499865,
+    "size_count": 60
+  },
+  "unclassified": {
+    "family": "unclassified",
+    "dr_motif": null,
+    "dr_prevalence": 0.0,
+    "size_median": 46938,
+    "size_q25": 24433,
+    "size_q75": 76194,
+    "size_min": 641,
+    "size_max": 697939,
+    "size_count": 4728
+  },
+  "Arwing": {
+    "family": "Arwing",
+    "dr_motif": "CCCG",
+    "dr_examples": [
+      "CCCGTC",
+      "CCCG"
+    ],
+    "dr_prevalence": 0.54,
+    "size_median": 91385,
+    "size_q25": 64507,
+    "size_q75": 108737,
+    "size_min": 15619,
+    "size_max": 267782,
+    "size_count": 51
+  }
+}
