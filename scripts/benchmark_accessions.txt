@@ -91,3 +91,10 @@ GCF_000149925.1	Puccinia graminis f. sp. tritici CRL 75-36-700-3
 GCF_000003125.1	Talaromyces stipitatus ATCC 10500
 GCF_000151425.1	Trichophyton rubrum CBS 118892
 GCF_000150825.1	Verticillium alfalfae VaMs.102
+GCF_000240135.3	Fusarium graminearum PH-1
+GCF_000149955.1	Fusarium oxysporum f. sp. lycopersici 4287
+GCF_001889945.1	Aspergillus brasiliensis CBS 101740
+GCF_002846915.1	Aspergillus ochraceoroseus IBT 24754
+GCF_000769745.1	Penicillium expansum
+GCF_016767815.1	Penicillium digitatum
+GCF_028827035.1	Penicillium chrysogenum
