@@ -72,6 +72,21 @@ class StarshipResult:
     def is_novel(self) -> bool:
         return not (self.homology_identity >= 0.80 and self.homology_coverage >= 0.50)
 
+    @property
+    def classification_status(self) -> str:
+        """Classify the family assignment strength.
+
+        Returns 'unclassified', 'putative_novel', or 'classified'.
+        'putative_novel' = captain detected but family score below threshold,
+        suggesting a potentially novel Starship family.
+        """
+        from .settings import WEAK_CLASSIFICATION_THRESHOLD
+        if self.captain_family == "unclassified" and self.family_score == 0.0:
+            return "unclassified"
+        if self.family_score < WEAK_CLASSIFICATION_THRESHOLD:
+            return "putative_novel"
+        return "classified"
+
 
 @dataclass
 class StarKITRun:

@@ -76,6 +76,7 @@ def write_tsv(starkit_run: StarKITRun, output_prefix: str):
         "truncated",
         "novelty",
         "nested_in",
+        "classification_status",
     ])
 
     with open(output_file, "w") as f:
@@ -116,6 +117,7 @@ def write_tsv(starkit_run: StarKITRun, output_prefix: str):
                 str(result.truncated),
                 novelty,
                 result.nested_in or "NA",
+                result.classification_status,
             ])
             f.write(row + "\n")
 

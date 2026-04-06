@@ -8,6 +8,9 @@ DEFAULT_UPSTREAM_SCAN = 10000
 DEFAULT_TSD_MOTIF = "TTAC"
 DEFAULT_TSD_CONSENSUS_REGEX = r"TTAC.{7}A"
 
+# Family classification
+WEAK_CLASSIFICATION_THRESHOLD = 200  # family HMM score below this = "weakly classified"
+
 # De novo TIR detection
 MIN_TIR_LENGTH = 8
 MIN_TIR_IDENTITY = 0.70

@@ -377,6 +377,7 @@ a:hover { text-decoration: underline; }
 .badge-low    { background: #999; }
 .badge-known  { background: #6c757d; }
 .badge-new    { background: #28a745; }
+.badge-putative-novel { background: #e83e8c; }
 
 /* ---- Summary table ---- */
 .summary-section h2 {
@@ -684,6 +685,9 @@ table.params td {
         {{ s.starship_id }}
         &mdash;
         <span class="badge badge-{{ s.evidence_level.value }}">{{ s.evidence_level.value }}</span>
+        {% if s.classification_status == "putative_novel" %}
+        <span class="badge badge-putative-novel">putative novel</span>
+        {% endif %}
         {{ s.captain_family }}
         ({{ "{:,}".format(s.size) }} bp)
     </h3>
@@ -705,7 +709,13 @@ table.params td {
 <tr><th>Captain e-value</th><td class="mono">{{ "%.2e" | format(s.captain.evalue) }}</td></tr>
 <tr><th>Captain HMM</th><td>{{ s.captain.hmm_name }}</td></tr>
 <tr><th>Family</th><td>{{ s.captain_family }}</td></tr>
-<tr><th>Family score</th><td>{{ "%.1f" | format(s.family_score) }}</td></tr>
+<tr><th>Family score</th><td>{{ "%.1f" | format(s.family_score) }}
+    {% if s.classification_status == "putative_novel" %}
+    &mdash; <span class="badge badge-putative-novel">putative novel family</span> (score below threshold)
+    {% elif s.classification_status == "unclassified" %}
+    &mdash; unclassified (no family HMM hit)
+    {% endif %}
+</td></tr>
 <tr>
     <th>TSD sequence</th>
     <td class="mono">{{ s.tsd if s.tsd else "not detected" }}</td>
