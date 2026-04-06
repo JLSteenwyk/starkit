@@ -333,9 +333,10 @@ def execute(
     )
 
     # Write output
+    elapsed = time.time() - start_time
     write_tsv(starkit_run, output_prefix)
     write_fasta(starkit_run, output_prefix)
-    generate_report(starkit_run, output_prefix)
+    generate_report(starkit_run, output_prefix, runtime=elapsed)
 
     # Display stats
     write_output_stats(starkit_run, start_time)
