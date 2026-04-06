@@ -1,0 +1,93 @@
+GCF_000002655.1	Aspergillus fumigatus Af293
+GCF_000002855.4	Aspergillus niger CBS 513.88
+GCF_000184455.2	Aspergillus oryzae RIB40
+GCF_000149615.1	Aspergillus terreus NIH2624
+GCF_000149645.3	Aspergillus fischeri NRRL 181
+GCF_013085055.1	Fusarium oxysporum Fo47
+GCF_023522795.1	Fusarium solani
+GCF_900079805.1	Fusarium fujikuroi IMI 58289
+GCF_900067095.1	Fusarium proliferatum ET1
+GCF_000149335.2	Coccidioides immitis RS
+GCF_016861735.1	Aspergillus chevalieri
+GCF_016861625.1	Aspergillus luchuensis
+GCF_010724455.1	Aspergillus lentulus
+GCF_000150115.1	Histoplasma capsulatum G186AR
+GCF_009017415.1	Aspergillus flavus
+GCF_015533775.1	Penicillium roqueforti
+GCF_000225545.1	Orbilia oligospora ATCC 24927
+GCF_020744475.1	Fusarium redolens
+GCF_018416015.2	Coccidioides posadasii str. Silveira
+GCF_000319635.2	Colletotrichum fructicola Nara gc5
+GCF_000011425.1	Aspergillus nidulans FGSC A4
+GCF_000002495.2	Pyricularia oryzae 70-15
+GCF_001078395.1	Aspergillus udagawae
+GCF_003344945.1	Aspergillus welwitschiae
+GCF_000150735.1	Paracoccidioides brasiliensis Pb18
+GCF_016097325.1	Aspergillus melleus
+GCF_000003525.1	Blastomyces dermatitidis ER-3
+GCF_000150675.1	Verticillium dahliae VdLs.17
+GCF_000303195.2	Fusarium pseudograminearum CS3096
+GCF_020744135.1	Fusarium venenatum
+GCF_004022145.1	Paecilomyces variotii
+GCF_028828025.1	Penicillium rubens
+GCF_000219625.1	Zymoseptoria tritici IPO323
+GCF_009193645.1	Aspergillus pseudonomiae
+GCF_013390185.1	Colletotrichum aenigma
+GCF_013396075.1	Fusarium subglutinans
+GCF_021015755.1	Lentinula edodes
+GCF_003444635.1	Morchella importuna
+GCF_028829755.1	Penicillium solitum
+GCF_003171515.1	Pyrenophora tritici-repentis
+GCF_907166805.1	Alternaria atra
+GCF_003184765.1	Aspergillus aculeatinus CBS 121060
+GCF_009176365.1	Aspergillus alliaceus
+GCF_003184785.1	Aspergillus japonicus CBS 114.51
+GCF_009193445.1	Aspergillus pseudotamarii
+GCF_001890705.1	Aspergillus sydowii CBS 593.65
+GCF_013340325.1	Aspergillus tubingensis
+GCF_000721785.1	Aureobasidium pullulans EXF-150
+GCF_028858645.1	Bipolaris maydis
+GCF_000338995.1	Bipolaris sorokiniana ND90Pr
+GCF_014898535.1	Botrytis deweyae
+GCF_000585535.1	Cladophialophora psammophila CBS 110553
+GCF_013390195.1	Colletotrichum siamense
+GCF_000464535.1	Endocarpon pusillum Z07020
+GCF_001646965.1	Fonsecaea nubica
+GCF_000835455.1	Fonsecaea pedrosoi CBS 271.37
+GCF_019915245.1	Fusarium musae
+GCF_019609905.1	Fusarium poae
+GCF_000149555.1	Fusarium verticillioides 7600
+GCF_014066315.1	Letharia lupina
+GCF_013426205.1	Metarhizium brunneum
+GCF_000187425.2	Metarhizium robertsii ARSEF 23
+GCF_000150705.2	Paracoccidioides lutzii Pb01
+GCF_000226545.1	Podospora anserina S mat+
+GCF_000820605.1	Sporothrix brasiliensis 5110
+GCF_009556855.1	Talaromyces marneffei
+GCF_013368755.1	Talaromyces rugulosus
+GCF_020647865.1	Trichoderma asperellum
+GCF_000002715.2	Aspergillus clavatus NRRL 1
+GCF_001890805.1	Aspergillus glaucus CBS 516.65
+GCF_001204775.2	Aspergillus nomiae NRRL 13137
+GCF_018340605.1	Aspergillus pseudoviridinutans
+GCF_000600275.1	Aspergillus ruber CBS 135680
+GCF_002237265.1	Aspergillus thermomutatus
+GCF_000523435.1	Bipolaris zeicola 26-R-13
+GCF_014898465.1	Botrytis porri
+GCF_000143365.1	Chaetomium globosum CBS 148.51
+GCF_011075155.1	Colletotrichum scovillei
+GCF_000359705.1	Exserohilum turcica Et28A
+GCF_001642475.1	Fonsecaea monophora
+GCF_026873545.1	Fusarium falciforme
+GCF_020744385.1	Fusarium flagelliforme
+GCF_000151355.1	Fusarium vanettenii 77-13-4
+GCF_012971845.1	Lasiodiplodia theobromae
+GCF_020744255.1	Microdochium trichocladiopsis
+GCF_001890105.1	Penicilliopsis zonata CBS 506.65
+GCF_001723175.1	Penicillium oxalicum
+GCF_001653235.2	Pochonia chlamydosporia 170
+GCF_001641265.1	Pseudogymnoascus destructans
+GCF_000149925.1	Puccinia graminis f. sp. tritici CRL 75-36-700-3
+GCF_000003125.1	Talaromyces stipitatus ATCC 10500
+GCF_000151425.1	Trichophyton rubrum CBS 118892
+GCF_000150825.1	Verticillium alfalfae VaMs.102
