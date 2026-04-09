@@ -158,3 +158,139 @@ def detect_captains(
     proteins = get_protein_sequences(records)
     hmm_profiles = load_hmm_profiles(hmm_dir)
     return search_captains(proteins, hmm_profiles, evalue_threshold)
+
+
+def sixframe_captain_search(
+    record,
+    region_start: int,
+    region_end: int,
+    hmm_profiles: List[pyhmmer.plan7.HMM],
+    evalue_threshold: float,
+) -> List[CaptainHit]:
+    """Search for captain genes via six-frame translation of a genomic region.
+
+    Used as a fallback for homology-only predictions where no annotated
+    captain was found. Translates the region in all 6 reading frames and
+    searches the resulting ORFs against captain HMM profiles.
+
+    Parameters
+    ----------
+    record : Bio.SeqRecord.SeqRecord
+        The contig containing the region.
+    region_start, region_end : int
+        Coordinates of the region to search.
+    hmm_profiles : list of pyhmmer.plan7.HMM
+        Captain HMM profiles.
+    evalue_threshold : float
+        Maximum E-value threshold.
+
+    Returns
+    -------
+    list of CaptainHit
+        Captain hits found in the six-frame translations.
+    """
+    from Bio.Seq import Seq
+    from Bio.SeqFeature import SeqFeature, SimpleLocation
+
+    seq = record.seq[region_start:region_end]
+    rc_seq = seq.reverse_complement()
+
+    min_orf_len = 300  # minimum ORF length in nucleotides (100 aa)
+
+    alphabet = pyhmmer.easel.Alphabet.amino()
+    orf_sequences = []
+    orf_metadata = []  # (orf_id, contig_start, contig_end, strand)
+
+    for frame in range(3):
+        # Forward strand
+        subseq = seq[frame:]
+        # Trim to multiple of 3
+        subseq = subseq[:len(subseq) - len(subseq) % 3]
+        if len(subseq) >= min_orf_len:
+            protein = str(subseq.translate(table=1))
+            # Split on stop codons, keep ORFs >= 100 aa
+            pos = 0
+            for orf_idx, orf in enumerate(protein.split("*")):
+                orf_nt_start = frame + pos * 3
+                if len(orf) >= 100:
+                    orf_id = f"6f_{record.id}_{region_start}_{frame}f_{orf_idx}"
+                    genomic_start = region_start + orf_nt_start
+                    genomic_end = genomic_start + len(orf) * 3
+                    orf_sequences.append(
+                        pyhmmer.easel.TextSequence(
+                            name=orf_id.encode(),
+                            sequence=orf,
+                        ).digitize(alphabet)
+                    )
+                    orf_metadata.append((orf_id, genomic_start, genomic_end, 1))
+                pos += len(orf) + 1  # +1 for the stop codon
+
+        # Reverse strand
+        subseq_rc = rc_seq[frame:]
+        subseq_rc = subseq_rc[:len(subseq_rc) - len(subseq_rc) % 3]
+        if len(subseq_rc) >= min_orf_len:
+            protein_rc = str(subseq_rc.translate(table=1))
+            pos = 0
+            for orf_idx, orf in enumerate(protein_rc.split("*")):
+                orf_nt_start = frame + pos * 3
+                if len(orf) >= 100:
+                    orf_id = f"6f_{record.id}_{region_start}_{frame}r_{orf_idx}"
+                    # Map reverse strand coordinates back to forward strand
+                    rc_start = orf_nt_start
+                    rc_end = rc_start + len(orf) * 3
+                    genomic_end = region_end - rc_start
+                    genomic_start = region_end - rc_end
+                    orf_sequences.append(
+                        pyhmmer.easel.TextSequence(
+                            name=orf_id.encode(),
+                            sequence=orf,
+                        ).digitize(alphabet)
+                    )
+                    orf_metadata.append((orf_id, genomic_start, genomic_end, -1))
+                pos += len(orf) + 1
+
+    if not orf_sequences:
+        return []
+
+    # Build lookup
+    meta_lookup = {oid: (gs, ge, strand) for oid, gs, ge, strand in orf_metadata}
+
+    hits = []
+    for top_hits in pyhmmer.hmmsearch(hmm_profiles, orf_sequences):
+        query_name = top_hits.query.name
+        hmm_name = query_name.decode() if isinstance(query_name, bytes) else str(query_name)
+        for hit in top_hits:
+            if hit.included and hit.evalue <= evalue_threshold:
+                hit_name = hit.name
+                orf_id = hit_name.decode() if isinstance(hit_name, bytes) else str(hit_name)
+                if orf_id not in meta_lookup:
+                    continue
+                genomic_start, genomic_end, strand = meta_lookup[orf_id]
+
+                # Create a synthetic feature for this ORF
+                feature = SeqFeature(
+                    location=SimpleLocation(genomic_start, genomic_end, strand=strand),
+                    type="CDS",
+                    qualifiers={"note": ["six-frame translation captain"]},
+                )
+
+                hits.append(
+                    CaptainHit(
+                        feature=feature,
+                        contig_id=record.id,
+                        start=genomic_start,
+                        end=genomic_end,
+                        strand=strand,
+                        evalue=hit.evalue,
+                        score=hit.score,
+                        hmm_name=hmm_name,
+                        protein_id=f"sixframe_{orf_id}",
+                    )
+                )
+
+    # Keep only the best hit per region (avoid reporting multiple overlapping ORFs)
+    if hits:
+        hits.sort(key=lambda h: h.evalue)
+        return [hits[0]]
+
+    return []

@@ -142,7 +142,8 @@ def run(
     #          Store results to apply to StarshipResults later without re-running.
     captain_classifications = {}  # protein_id -> (family_name, family_score)
     family_hmm_dir = FAMILY_HMM_DIR
-    if captain_hits and os.path.isdir(family_hmm_dir) and os.listdir(family_hmm_dir):
+    family_hmms = None
+    if os.path.isdir(family_hmm_dir) and os.listdir(family_hmm_dir):
         from .classify import classify_captain, load_family_hmms
         family_hmms = load_family_hmms(family_hmm_dir)
         for captain in captain_hits:
@@ -265,8 +266,16 @@ def run(
         starship_results.append(result)
 
     # Step 5: Add novel homology-only Starships (no captain detected)
+    # For each, attempt six-frame translation to find unannotated captains
+    from .captain import sixframe_captain_search, load_hmm_profiles
+    try:
+        sixframe_hmms = load_hmm_profiles(CAPTAIN_HMM_DIR)
+    except Exception:
+        sixframe_hmms = None
+
     next_idx = len(starship_results) + 1
     homology_added = 0
+    sixframe_found = 0
     for hit in homology_hits:
         hit_size = hit.end - hit.start
         if min_size and hit_size < min_size:
@@ -280,14 +289,58 @@ def run(
         if record is None:
             continue
 
-        cargo_genes = extract_cargo(record, hit.start, hit.end, None)
-        result = _homology_hit_to_starship(hit, record, next_idx, cargo_genes)
+        # Try six-frame translation to find unannotated captain
+        sixframe_captain = None
+        if sixframe_hmms:
+            sixframe_hits = sixframe_captain_search(
+                record, hit.start, hit.end, sixframe_hmms, evalue,
+            )
+            if sixframe_hits:
+                sixframe_captain = sixframe_hits[0]
+                sixframe_found += 1
+                logger.info(
+                    f"Six-frame captain found: {sixframe_captain.protein_id} "
+                    f"(e={sixframe_captain.evalue:.2e}) in {hit.contig_id}:"
+                    f"{hit.start:,}-{hit.end:,}"
+                )
+
+        if sixframe_captain:
+            # Upgrade to captain-based prediction
+            cargo_genes = extract_cargo(
+                record, hit.start, hit.end, sixframe_captain.feature,
+            )
+            result = StarshipResult(
+                starship_id=f"starship_{next_idx:03d}",
+                contig_id=hit.contig_id,
+                region=record,
+                start=hit.start,
+                end=hit.end,
+                captain=sixframe_captain,
+                captain_family=hit.query_family if hit.query_family != "unclassified" else "unclassified",
+                family_score=0.0,
+                cargo_genes=cargo_genes,
+                boundary_method="homology",
+                homology_identity=hit.identity,
+                homology_coverage=hit.coverage,
+            )
+            # Classify the six-frame captain
+            if family_hmms is not None:
+                fname, fscore = classify_captain(sixframe_captain, records, family_hmms)
+                sixframe_captain.hmm_name = fname
+                captain_classifications[sixframe_captain.protein_id] = (fname, fscore)
+        else:
+            cargo_genes = extract_cargo(record, hit.start, hit.end, None)
+            result = _homology_hit_to_starship(hit, record, next_idx, cargo_genes)
+
         starship_results.append(result)
         next_idx += 1
         homology_added += 1
 
     if homology_added:
-        logger.info(f"Added {homology_added} Starship(s) from homology search")
+        logger.info(
+            f"Added {homology_added} Starship(s) from homology search"
+            f" ({sixframe_found} with six-frame captains)"
+        )
 
     if not starship_results:
         logger.info("No Starships predicted.")
