@@ -28,6 +28,10 @@ def compute_evidence_level(result: StarshipResult) -> EvidenceLevel:
     MEDIUM: captain HMM hit alone, OR strong homology alone, OR partial structural
     LOW:    weak homology only, no captain, no structural features
     """
+    # Tier 3 (estimated) boundaries are unreliable — cap at LOW
+    if result.boundary_method == "estimated":
+        return EvidenceLevel.LOW
+
     has_captain = result.captain.evalue < 1.0  # real captain, not placeholder
     has_homology = result.homology_identity >= 0.80 and result.homology_coverage >= 0.50
     has_both_tirs = result.tir_left is not None and result.tir_right is not None

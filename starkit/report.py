@@ -718,7 +718,7 @@ table.params td {
     {% endif %}
 </td></tr>
 <tr>
-    <th>TSD sequence</th>
+    <th>DR sequence</th>
     <td class="mono">{{ s.tsd if s.tsd else "not detected" }}</td>
 </tr>
 <tr>
@@ -742,6 +742,8 @@ table.params td {
     </td>
 </tr>
 <tr><th>Truncated</th><td>{{ "Yes" if s.truncated else "No" }}</td></tr>
+<tr><th>Captain orientation flag</th><td>{{ "Yes" if s.captain_orientation_flag else "No" }}</td></tr>
+<tr><th>Captain truncated flag</th><td>{{ "Yes" if s.captain_truncated_flag else "No" }}</td></tr>
 {% if s.nested_in %}
 <tr><th>Nested inside</th><td>{{ s.nested_in }}</td></tr>
 {% endif %}

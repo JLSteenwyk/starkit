@@ -26,7 +26,7 @@ from .settings import (
 )
 from .version import __version__ as current_version
 from .dedup import resolve_overlaps
-from .write import write_user_args, write_output_stats, write_tsv, write_fasta
+from .write import write_user_args, write_output_stats, write_tsv, write_fasta, write_bed
 
 
 def _write_temp_fasta(records):
@@ -219,6 +219,25 @@ def run(
             homology_identity=best_homology.identity if best_homology else 0.0,
             homology_coverage=best_homology.coverage if best_homology else 0.0,
         )
+
+        # Flag captain orientation issues
+        element_size = result.end - result.start
+        if element_size > 0:
+            if captain.strand >= 0:
+                # + strand captain should be in the first 20% of the element
+                if captain.start - result.start > element_size * 0.20:
+                    result.captain_orientation_flag = True
+            else:
+                # - strand captain should be in the last 20% of the element
+                if result.end - captain.end > element_size * 0.20:
+                    result.captain_orientation_flag = True
+
+        # Flag captain truncation (protein < 400 aa equivalent)
+        captain_nt_len = captain.end - captain.start
+        captain_aa_len = captain_nt_len / 3
+        if captain_aa_len < 400:
+            result.captain_truncated_flag = True
+
         starship_results.append(result)
 
     # Step 5: Add novel homology-only Starships (no captain detected)
@@ -336,6 +355,7 @@ def execute(
     elapsed = time.time() - start_time
     write_tsv(starkit_run, output_prefix)
     write_fasta(starkit_run, output_prefix)
+    write_bed(starkit_run, output_prefix)
     generate_report(starkit_run, output_prefix, runtime=elapsed)
 
     # Display stats

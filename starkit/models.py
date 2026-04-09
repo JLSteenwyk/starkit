@@ -63,6 +63,8 @@ class StarshipResult:
     homology_coverage: float = 0.0     # 0-1, from homology alignment
     nested_in: Optional[str] = None    # starship_id of parent if nested
     additional_captains: list = field(default_factory=list)  # extra CaptainHits merged
+    captain_orientation_flag: bool = False  # True if captain is on the wrong strand/position
+    captain_truncated_flag: bool = False    # True if captain protein is unusually short
 
     @property
     def size(self) -> int:

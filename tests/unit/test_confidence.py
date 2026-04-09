@@ -8,7 +8,7 @@ from starkit.models import EvidenceLevel, StarshipResult, CaptainHit, TIR
 
 def _make_result(tir_left=None, tir_right=None, tsd=None, evalue=1e-50,
                  size=100000, homology_identity=0.0, homology_coverage=0.0,
-                 boundary_method="estimated"):
+                 boundary_method="homology"):
     record = SeqRecord(Seq("A" * 200000), id="c1")
     feature = SeqFeature(location=SimpleLocation(0, 100, strand=1), type="CDS")
     captain = CaptainHit(
@@ -95,3 +95,12 @@ def test_score_starships():
     scored = score_starships([result])
     assert scored[0].evidence_level == EvidenceLevel.HIGH
     assert 0.0 <= scored[0].confidence_score <= 1.0
+
+
+def test_tier3_estimated_always_low():
+    """Estimated boundaries (Tier 3) should always get LOW evidence."""
+    result = _make_result(
+        evalue=1e-100, homology_identity=0.95, homology_coverage=0.90,
+        boundary_method="estimated",
+    )
+    assert compute_evidence_level(result) == EvidenceLevel.LOW

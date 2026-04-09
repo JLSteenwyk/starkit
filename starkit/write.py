@@ -48,6 +48,7 @@ def write_output_stats(starkit_run: StarKITRun, start_time: float):
     logger.info("  Output files:")
     logger.info(f"    {output_prefix}.tsv")
     logger.info(f"    {output_prefix}.fasta")
+    logger.info(f"    {output_prefix}.bed")
     logger.info(f"    {output_prefix}.html")
     logger.info(f"\n  Execution time: {elapsed:.2f}s")
 
@@ -71,9 +72,11 @@ def write_tsv(starkit_run: StarKITRun, output_prefix: str):
         "boundary_method",
         "tir_left",
         "tir_right",
-        "tsd_sequence",
+        "dr_sequence",
         "cargo_gene_count",
         "truncated",
+        "captain_orientation_flag",
+        "captain_truncated_flag",
         "novelty",
         "nested_in",
         "classification_status",
@@ -115,6 +118,8 @@ def write_tsv(starkit_run: StarKITRun, output_prefix: str):
                 tsd_sequence,
                 str(len(result.cargo_genes)),
                 str(result.truncated),
+                str(result.captain_orientation_flag),
+                str(result.captain_truncated_flag),
                 novelty,
                 result.nested_in or "NA",
                 result.classification_status,
@@ -148,3 +153,89 @@ def write_fasta(starkit_run: StarKITRun, output_prefix: str):
                 f.write(seq[i:i + 80] + "\n")
 
     logger.info(f"  Sequences written to {output_file}")
+
+
+def write_bed(starkit_run: StarKITRun, output_prefix: str):
+    """Write Starship features to a BED-like file at {output_prefix}.bed.
+
+    Each Starship produces rows for:
+      - captain gene (tag="cap")
+      - cargo genes (tag=".")
+      - TIR left/right if present (tag="flank", featureID has |TIR|up / |TIR|down)
+      - DR left/right if present (tag="flank", featureID has |DR|up / |DR|down)
+    """
+    output_file = f"{output_prefix}.bed"
+
+    header = "\t".join([
+        "contigID", "begin", "end", "featureID",
+        "tag", "strand", "starshipID", "annotation",
+    ])
+
+    def _strand_str(strand_val):
+        if strand_val == 1:
+            return "+"
+        elif strand_val == -1:
+            return "-"
+        return "."
+
+    with open(output_file, "w") as f:
+        f.write(header + "\n")
+
+        for result in starkit_run.starships:
+            sid = result.starship_id
+            contig = result.contig_id
+            cap = result.captain
+            cap_strand = _strand_str(cap.strand)
+
+            # Collect all rows for this Starship, then sort by start position
+            rows = []
+
+            # DR left (upstream) — sits just outside the TIR on the upstream side
+            if result.tsd is not None and result.tir_left is not None:
+                dr_seq = result.tsd.lower()
+                dr_start = result.tir_left.start - len(dr_seq)
+                dr_end = result.tir_left.start
+                rows.append((dr_start, dr_end, f"{cap.protein_id}|DR|up",
+                             "flank", cap_strand, dr_seq))
+
+            # TIR left
+            if result.tir_left is not None:
+                tir = result.tir_left
+                rows.append((tir.start, tir.end, f"{cap.protein_id}|TIR|up",
+                             "flank", cap_strand, tir.sequence))
+
+            # Captain gene
+            rows.append((cap.start, cap.end, cap.protein_id,
+                         "cap", cap_strand, "."))
+
+            # Cargo genes
+            for cargo in result.cargo_genes:
+                cargo_strand = _strand_str(cargo.strand)
+                annotation = cargo.product if cargo.product != "hypothetical protein" else "."
+                rows.append((cargo.start, cargo.end, cargo.gene_id,
+                             ".", cargo_strand, annotation))
+
+            # TIR right
+            if result.tir_right is not None:
+                tir = result.tir_right
+                rows.append((tir.start, tir.end, f"{cap.protein_id}|TIR|down",
+                             "flank", cap_strand, tir.sequence))
+
+            # DR right (downstream) — sits just outside the TIR on the downstream side
+            if result.tsd is not None and result.tir_right is not None:
+                dr_seq = result.tsd.lower()
+                dr_start = result.tir_right.end
+                dr_end = result.tir_right.end + len(dr_seq)
+                rows.append((dr_start, dr_end, f"{cap.protein_id}|DR|down",
+                             "flank", cap_strand, dr_seq))
+
+            # Sort all rows by start coordinate and write
+            rows.sort(key=lambda r: r[0])
+            for start, end, feat_id, tag, strand, annot in rows:
+                line = "\t".join([
+                    contig, str(start), str(end), feat_id,
+                    tag, strand, sid, annot,
+                ])
+                f.write(line + "\n")
+
+    logger.info(f"  BED features written to {output_file}")
