@@ -10,6 +10,7 @@ Uses a tiered approach:
 import json
 import logging
 import os
+import re
 from typing import Optional
 
 from .helpers import reverse_complement
@@ -23,6 +24,44 @@ from .settings import (
 )
 
 logger = logging.getLogger(__name__)
+
+_MYB_PATTERNS = re.compile(r"myb|SANT|Myb_DNA-bind|PF13837|PF00249|IPR017930", re.IGNORECASE)
+
+
+def _is_myb_feature(feature):
+    for key in ("product", "note", "db_xref", "inference"):
+        for val in feature.qualifiers.get(key, []):
+            if _MYB_PATTERNS.search(val):
+                return True
+    return False
+
+def find_myb_boundary(record, captain_start, captain_end, captain_strand, max_size):
+    best_feature = None
+    best_distance = -1
+    for feature in record.features:
+        if feature.type != "CDS" or not _is_myb_feature(feature):
+            continue
+        feat_start = int(feature.location.start)
+        feat_end = int(feature.location.end)
+        if captain_strand >= 0:
+            if feat_start <= captain_start:
+                continue
+            distance = feat_end - captain_start
+        else:
+            if feat_end >= captain_end:
+                continue
+            distance = captain_end - feat_start
+        if distance > max_size or distance <= 0:
+            continue
+        if distance > best_distance:
+            best_distance = distance
+            best_feature = feature
+    if best_feature is None:
+        return None, None
+    feat_start = int(best_feature.location.start)
+    feat_end = int(best_feature.location.end)
+    boundary_position = feat_end if captain_strand >= 0 else feat_start
+    return boundary_position, best_feature
 
 
 # --------------------------------------------------------------------------- #
@@ -450,6 +489,34 @@ def define_boundaries(captain_hit, record, min_size, max_size,
                     tsd=tsd, truncated=truncated,
                     boundary_method="dr_motif",
                 )
+
+    # ------------------------------------------------------------------- #
+    # Tier 2.5: MYB/SANT transcription factor at 3' boundary
+    # ------------------------------------------------------------------- #
+    search_max = max_size if max_size else 200000
+    myb_pos, myb_feat = find_myb_boundary(
+        record, captain_hit.start, captain_hit.end,
+        captain_hit.strand, search_max,
+    )
+    if myb_pos is not None:
+        if captain_hit.strand >= 0:
+            start = max(0, captain_hit.start - 2000)
+            end = min(contig_len, myb_pos)
+        else:
+            start = max(0, myb_pos)
+            end = min(contig_len, captain_hit.end + 2000)
+        element_size = end - start
+        effective_min = min_size if min_size else 5000
+        if element_size >= effective_min:
+            truncated = (start <= 10000) or (end >= contig_len - 1000)
+            logger.info(
+                f"Tier 2.5 (MYB TF): {record.id}:{start}-{end} ({element_size:,} bp)"
+            )
+            return dict(
+                start=start, end=end,
+                tir_left=None, tir_right=None, tsd=None,
+                truncated=truncated, boundary_method="myb_tf",
+            )
 
     # ------------------------------------------------------------------- #
     # Tier 3: Captain position + family size prior (estimated)

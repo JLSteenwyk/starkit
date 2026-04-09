@@ -39,6 +39,7 @@ class CargoGene:
     start: int
     end: int
     strand: int
+    tag: str = ""
 
 
 @dataclass
@@ -58,10 +59,11 @@ class StarshipResult:
     confidence_score: float = 0.0
     evidence_level: EvidenceLevel = EvidenceLevel.LOW
     truncated: bool = False
-    boundary_method: str = "estimated"  # "homology", "dr_motif", or "estimated"
+    boundary_method: str = "estimated"  # "homology", "dr_motif", "myb_tf", or "estimated"
     homology_identity: float = 0.0     # 0-1, from homology alignment
     homology_coverage: float = 0.0     # 0-1, from homology alignment
     nested_in: Optional[str] = None    # starship_id of parent if nested
+    adjacent_to: Optional[str] = None  # starship_id of nearby element
     additional_captains: list = field(default_factory=list)  # extra CaptainHits merged
     captain_orientation_flag: bool = False  # True if captain is on the wrong strand/position
     captain_truncated_flag: bool = False    # True if captain protein is unusually short

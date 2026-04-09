@@ -79,6 +79,7 @@ def write_tsv(starkit_run: StarKITRun, output_prefix: str):
         "captain_truncated_flag",
         "novelty",
         "nested_in",
+        "adjacent_to",
         "classification_status",
     ])
 
@@ -122,6 +123,7 @@ def write_tsv(starkit_run: StarKITRun, output_prefix: str):
                 str(result.captain_truncated_flag),
                 novelty,
                 result.nested_in or "NA",
+                result.adjacent_to or "NA",
                 result.classification_status,
             ])
             f.write(row + "\n")
@@ -212,8 +214,9 @@ def write_bed(starkit_run: StarKITRun, output_prefix: str):
             for cargo in result.cargo_genes:
                 cargo_strand = _strand_str(cargo.strand)
                 annotation = cargo.product if cargo.product != "hypothetical protein" else "."
+                cargo_tag = cargo.tag if cargo.tag else "."
                 rows.append((cargo.start, cargo.end, cargo.gene_id,
-                             ".", cargo_strand, annotation))
+                             cargo_tag, cargo_strand, annotation))
 
             # TIR right
             if result.tir_right is not None:

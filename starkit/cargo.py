@@ -17,6 +17,25 @@ from starkit.models import CargoGene
 logger = logging.getLogger(__name__)
 
 
+def tag_cargo_gene(feature) -> str:
+    product = feature.qualifiers.get("product", [""])[0].lower()
+    note = " ".join(feature.qualifiers.get("note", [])).lower()
+    all_text = product + " " + note
+    if any(k in all_text for k in ["nb-arc", "nlr", "nod-like", "nacht"]):
+        return "nlr"
+    if any(k in all_text for k in ["ferric reductase", "fre_", "iron reductase"]):
+        return "fre"
+    if "duf3723" in all_text:
+        return "duf3723"
+    if any(k in all_text for k in ["polyketide", "pks", "nrps", "nonribosomal", "terpene synthase"]):
+        return "secondary_metabolism"
+    if any(k in all_text for k in ["abc transporter", "efflux", "drug resistance", "mfs transporter"]):
+        return "drug_resistance"
+    if any(k in all_text for k in ["duf3435", "tyrosine recombinase"]):
+        return "transposase"
+    return ""
+
+
 def extract_cargo(
     record: SeqRecord,
     start: int,
@@ -73,6 +92,7 @@ def extract_cargo(
         )[0]
         product = feature.qualifiers.get("product", ["hypothetical protein"])[0]
         strand = feature.location.strand or 1
+        tag = tag_cargo_gene(feature)
 
         cargo_genes.append(
             CargoGene(
@@ -81,6 +101,7 @@ def extract_cargo(
                 start=feat_start,
                 end=feat_end,
                 strand=strand,
+                tag=tag,
             )
         )
 

@@ -82,7 +82,7 @@ def compute_confidence_score(result: StarshipResult) -> float:
     homology_score = result.homology_identity * result.homology_coverage
 
     # Boundary component
-    boundary_map = {"homology": 1.0, "dr_motif": 0.7, "estimated": 0.3}
+    boundary_map = {"homology": 1.0, "dr_motif": 0.7, "myb_tf": 0.55, "estimated": 0.3}
     boundary_score = boundary_map.get(result.boundary_method, 0.3)
 
     # Structural component

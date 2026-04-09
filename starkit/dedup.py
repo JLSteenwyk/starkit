@@ -93,6 +93,23 @@ def resolve_overlaps(starship_results: List[StarshipResult]) -> List[StarshipRes
     # Filter out merged duplicates
     kept = [r for i, r in enumerate(results) if i not in remove]
 
+    # Adjacency detection
+    for i in range(len(kept)):
+        for j in range(i + 1, len(kept)):
+            a, b = kept[i], kept[j]
+            if a.contig_id != b.contig_id:
+                continue
+            if a.end <= b.start:
+                gap = b.start - a.end
+            elif b.end <= a.start:
+                gap = a.start - b.end
+            else:
+                continue
+            if gap <= 10000:
+                a.adjacent_to = b.starship_id
+                b.adjacent_to = a.starship_id
+                logger.info(f"Adjacent: {a.starship_id} and {b.starship_id} ({gap:,}bp gap)")
+
     # Re-number IDs
     for idx, result in enumerate(kept, 1):
         result.starship_id = f"starship_{idx:03d}"

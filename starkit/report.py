@@ -152,12 +152,17 @@ def generate_svg_diagram(
                 )
 
     # Draw cargo genes first (below captain)
+    TAG_COLORS = {"nlr": "#dc3545", "fre": "#fd7e14", "duf3723": "#6f42c1",
+                  "secondary_metabolism": "#28a745", "drug_resistance": "#e83e8c",
+                  "transposase": "#c77c11"}
     for cargo in starship_result.cargo_genes:
-        fill = "#4B77BE" if cargo.strand >= 0 else "#6BAADB"
+        tag_color = TAG_COLORS.get(cargo.tag) if cargo.tag else None
+        fill = tag_color if tag_color else ("#4B77BE" if cargo.strand >= 0 else "#6BAADB")
         strand_str = "+" if cargo.strand >= 0 else "-"
+        tag_str = f"|tag: {cargo.tag}" if cargo.tag else ""
         tooltip = (
             f"{cargo.gene_id}|{cargo.product}|"
-            f"{cargo.start:,}-{cargo.end:,}|{strand_str}"
+            f"{cargo.start:,}-{cargo.end:,}|{strand_str}{tag_str}"
         )
         _gene_arrow(cargo.start, cargo.end, cargo.strand, fill,
                      data_tooltip=tooltip, css_class="gene-hover")
@@ -872,6 +877,9 @@ table.params td {
 {% if s.nested_in %}
 <tr><th>Nested inside</th><td>{{ s.nested_in }}</td></tr>
 {% endif %}
+{% if s.adjacent_to %}
+<tr><th>Adjacent to</th><td>{{ s.adjacent_to }}</td></tr>
+{% endif %}
 {% if s.additional_captains %}
 <tr><th>Additional captains</th><td>{{ s.additional_captains | map(attribute='protein_id') | join(', ') }}</td></tr>
 {% endif %}
@@ -888,6 +896,7 @@ table.params td {
     <th>Start</th>
     <th>End</th>
     <th>Strand</th>
+    <th>Tag</th>
 </tr>
 </thead>
 <tbody>
@@ -898,6 +907,7 @@ table.params td {
     <td class="num">{{ "{:,}".format(cg.start) }}</td>
     <td class="num">{{ "{:,}".format(cg.end) }}</td>
     <td>{{ "+" if cg.strand >= 0 else "-" }}</td>
+    <td>{{ cg.tag if cg.tag else "-" }}</td>
 </tr>
 {% endfor %}
 </tbody>
