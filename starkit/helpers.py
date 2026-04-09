@@ -72,8 +72,11 @@ def compute_genome_stats(records: list[SeqRecord]) -> dict:
 
     gc_content = gc_count / total_length if total_length > 0 else 0.0
 
+    contig_lengths = {record.id: len(record.seq) for record in records}
+
     return {
         "contig_count": contig_count,
         "total_length": total_length,
         "gc_content": gc_content,
+        "contig_lengths": contig_lengths,
     }

@@ -36,6 +36,10 @@ def process_args(args) -> dict:
     use_log = args.log or False
     quiet = args.quiet or False
     no_homology = getattr(args, "no_homology", False) or False
+    library = getattr(args, "library", None)
+    if library and not os.path.isfile(library):
+        logger.warning(f"Library file does not exist: {library}")
+        library = None
 
     return dict(
         input_file=input_file,
@@ -48,4 +52,5 @@ def process_args(args) -> dict:
         use_log=use_log,
         quiet=quiet,
         no_homology=no_homology,
+        library=library,
     )

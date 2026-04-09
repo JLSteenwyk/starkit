@@ -126,6 +126,7 @@ def run(
     use_log,
     quiet,
     no_homology=False,
+    library=None,
 ):
     """Core pipeline: parse input -> detect captains -> homology search ->
     tiered boundary detection -> extract cargo -> classify -> score."""
@@ -162,20 +163,43 @@ def run(
     # Step 3: Run homology search (needed BEFORE boundary detection for Tier 1)
     homology_hits = []
     genome_fasta = None
+    combined_ref = None
     try:
-        if not no_homology and os.path.exists(STARSHIP_REF_FASTA):
+        # Build the reference FASTA (built-in + optional custom library)
+        ref_sources = []
+        if os.path.exists(STARSHIP_REF_FASTA):
+            ref_sources.append(STARSHIP_REF_FASTA)
+        if library and os.path.exists(library):
+            ref_sources.append(library)
+            logger.info(f"Using custom library: {library}")
+
+        if not no_homology and ref_sources:
             genome_fasta = _write_temp_fasta(records)
+
+            # Concatenate reference sources if multiple
+            if len(ref_sources) == 1:
+                ref_fasta = ref_sources[0]
+            else:
+                combined_ref = tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".fasta", delete=False,
+                )
+                for src in ref_sources:
+                    with open(src) as f:
+                        combined_ref.write(f.read())
+                combined_ref.close()
+                ref_fasta = combined_ref.name
+
             from .homology import search_homology, merge_overlapping_hits
             raw_hits = search_homology(
-                genome_fasta, STARSHIP_REF_FASTA,
+                genome_fasta, ref_fasta,
                 min_identity=0.80, min_coverage=0.50,
             )
-            # DON'T merge aggressively — keep individual high-coverage hits
-            # Only merge hits from the SAME reference Starship
             homology_hits = merge_overlapping_hits(raw_hits, merge_distance=1000)
     finally:
         if genome_fasta and os.path.exists(genome_fasta):
             os.unlink(genome_fasta)
+        if combined_ref and os.path.exists(combined_ref.name):
+            os.unlink(combined_ref.name)
 
     # Step 4: Tiered boundary detection + cargo extraction for each captain
     starship_results = []
@@ -345,10 +369,12 @@ def execute(
 
     # Run the pipeline
     no_homology = kwargs.get("no_homology", False)
+    library = kwargs.get("library", None)
     starkit_run = run(
         input_file, output_prefix, gff_file,
         evalue, min_size, max_size, evidence,
         use_log, quiet, no_homology=no_homology,
+        library=library,
     )
 
     # Write output

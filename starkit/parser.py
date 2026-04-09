@@ -76,6 +76,9 @@ def create_parser() -> ArgumentParser:
         --no-homology                               disable homology-based detection
                                                     (captain + DR boundaries only)
 
+        --library <fasta>                           custom Starship library FASTA to
+                                                    augment the built-in reference
+
         -l, --log                                   creates a log file
 
         -q, --quiet                                 suppress stdout messages
@@ -137,6 +140,14 @@ def create_parser() -> ArgumentParser:
         action="store_true",
         required=False,
         help=SUPPRESS,
+    )
+
+    optional.add_argument(
+        "--library",
+        type=str,
+        required=False,
+        help=SUPPRESS,
+        metavar="FASTA file",
     )
 
     optional.add_argument(

@@ -275,6 +275,117 @@ def generate_svg_diagram(
 
 
 # ---------------------------------------------------------------------------
+# Genome map
+# ---------------------------------------------------------------------------
+
+FAMILY_COLORS = {
+    "Hephaestus": "#c77c11", "Enterprise": "#0b81d5", "Prometheus": "#28a745",
+    "Galactica": "#6f42c1", "Tardis": "#dc3545", "Phoenix": "#fd7e14",
+    "Arwing": "#20c997", "Voyager": "#e83e8c", "Serenity": "#6c757d",
+    "Moya": "#17a2b8", "unclassified": "#999",
+}
+
+
+def generate_genome_map(starkit_run, width=900):
+    """Generate an SVG genome map showing contig bars with Starship positions."""
+    contig_lengths = starkit_run.genome_stats.get("contig_lengths", {})
+    if not contig_lengths:
+        return ""
+
+    starships = starkit_run.starships
+    if not starships and not contig_lengths:
+        return ""
+
+    # Sort contigs by length descending
+    sorted_contigs = sorted(contig_lengths.items(), key=lambda x: -x[1])
+
+    pad_left = 140
+    pad_right = 20
+    bar_h = 14
+    bar_gap = 6
+    top_pad = 10
+    max_contigs = 30  # cap for very fragmented assemblies
+    if len(sorted_contigs) > max_contigs:
+        sorted_contigs = sorted_contigs[:max_contigs]
+
+    height = top_pad + len(sorted_contigs) * (bar_h + bar_gap) + 30
+    draw_w = width - pad_left - pad_right
+    genome_max = sorted_contigs[0][1] if sorted_contigs else 1
+
+    def x_of(pos, ctg_len):
+        scale = draw_w * (ctg_len / genome_max)
+        return pad_left + (pos / ctg_len) * scale if ctg_len > 0 else pad_left
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" '
+        f'style="background:#fff;font-family:Oxygen,Garamond,Georgia,serif;font-size:10px;">'
+    ]
+
+    # Group starships by contig
+    ships_by_contig = {}
+    for s in starships:
+        ships_by_contig.setdefault(s.contig_id, []).append(s)
+
+    for i, (ctg_id, ctg_len) in enumerate(sorted_contigs):
+        y = top_pad + i * (bar_h + bar_gap)
+        bar_w = draw_w * (ctg_len / genome_max)
+
+        # Contig label
+        label = ctg_id if len(ctg_id) <= 18 else ctg_id[:15] + "..."
+        lines.append(
+            f'  <text x="{pad_left - 6}" y="{y + bar_h / 2 + 3}" '
+            f'text-anchor="end" fill="#444" font-size="9">{label}</text>'
+        )
+
+        # Contig bar
+        lines.append(
+            f'  <rect x="{pad_left}" y="{y}" width="{bar_w:.1f}" height="{bar_h}" '
+            f'rx="2" fill="#eee" stroke="#ccc" stroke-width="0.5"/>'
+        )
+
+        # Starships on this contig
+        for s in ships_by_contig.get(ctg_id, []):
+            sx = x_of(s.start, ctg_len)
+            ex = x_of(s.end, ctg_len)
+            sw = max(2, ex - sx)
+            color = FAMILY_COLORS.get(s.captain_family, "#999")
+            tip = (f"{s.starship_id}|{s.captain_family} ({s.size:,}bp)|"
+                   f"{s.contig_id}:{s.start:,}-{s.end:,}")
+            lines.append(
+                f'  <rect x="{sx:.1f}" y="{y + 1}" width="{sw:.1f}" height="{bar_h - 2}" '
+                f'rx="1" fill="{color}" opacity="0.85" '
+                f'class="gene-hover" data-tooltip="{tip}"/>'
+            )
+
+    # Scale bar
+    scale_y = height - 12
+    scale_bp = 10 ** int(f"{genome_max / 4:.0e}".split("e+")[-1])
+    scale_px = scale_bp / genome_max * draw_w
+    if scale_px < 30:
+        scale_bp *= 5
+        scale_px = scale_bp / genome_max * draw_w
+    sx = pad_left
+    lines.append(
+        f'  <line x1="{sx}" y1="{scale_y}" x2="{sx + scale_px:.1f}" y2="{scale_y}" '
+        f'stroke="#666" stroke-width="1.5"/>'
+    )
+    for tx in (sx, sx + scale_px):
+        lines.append(
+            f'  <line x1="{tx:.1f}" y1="{scale_y - 3}" x2="{tx:.1f}" y2="{scale_y + 3}" '
+            f'stroke="#666" stroke-width="1.5"/>'
+        )
+    scale_label = f"{scale_bp / 1e6:.1f} Mb" if scale_bp >= 1e6 else f"{scale_bp / 1000:.0f} kb"
+    lines.append(
+        f'  <text x="{sx + scale_px / 2:.1f}" y="{scale_y - 5}" '
+        f'text-anchor="middle" fill="#666" font-size="9">{scale_label}</text>'
+    )
+
+    lines.append("</svg>")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Jinja2 HTML template (inline string)
 # ---------------------------------------------------------------------------
 
@@ -502,6 +613,10 @@ table.detail-table td.num {
 }
 .mono { font-family: monospace; font-size: 12px; word-break: break-all; }
 
+/* ---- Genome map ---- */
+.genome-map { margin-bottom: 28px; }
+.genome-map h2 { color: #444; margin-bottom: 10px; }
+
 /* ---- Gene tooltip ---- */
 .gene-hover { cursor: pointer; }
 .gene-hover:hover { opacity: 0.7 !important; filter: brightness(1.1); }
@@ -618,6 +733,16 @@ table.params td {
         <div class="label"><span class="badge badge-new">New</span> to Starbase</div>
     </div>
 </div>
+
+<!-- ===== Genome Map ===== -->
+{% if genome_map_svg %}
+<div class="genome-map">
+<h2>Genome Map</h2>
+<div style="overflow-x:auto;">
+{{ genome_map_svg }}
+</div>
+</div>
+{% endif %}
 
 <!-- ===== Parameters ===== -->
 {% if parameters %}
@@ -943,6 +1068,7 @@ def generate_report(
 
     # Pre-render SVG diagrams
     svg_diagrams = [generate_svg_diagram(s) for s in starships]
+    genome_map_svg = generate_genome_map(starkit_run)
 
     # Render the template
     template = jinja2.Template(HTML_TEMPLATE)
@@ -954,6 +1080,7 @@ def generate_report(
         starships=starships,
         counts=counts,
         svg_diagrams=svg_diagrams,
+        genome_map_svg=genome_map_svg,
         runtime=runtime,
     )
 
