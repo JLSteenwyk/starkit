@@ -73,6 +73,12 @@ def create_parser() -> ArgumentParser:
         --evidence <level>                          minimum evidence level to report
                                                     high, medium, low, all (default: all)
 
+        --mode <strict|relaxed>                     prediction stringency
+                                                    strict: captain must be at element edge
+                                                    with canonical orientation
+                                                    relaxed: flag violations but keep
+                                                    (default: relaxed)
+
         --no-homology                               disable homology-based detection
                                                     (captain + DR boundaries only)
 
@@ -133,6 +139,16 @@ def create_parser() -> ArgumentParser:
         choices=evidence_choices,
         help=SUPPRESS,
         metavar="evidence level",
+    )
+
+    optional.add_argument(
+        "--mode",
+        type=str,
+        required=False,
+        choices=["strict", "relaxed"],
+        default="relaxed",
+        help=SUPPRESS,
+        metavar="mode",
     )
 
     optional.add_argument(

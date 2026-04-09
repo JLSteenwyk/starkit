@@ -40,6 +40,7 @@ def process_args(args) -> dict:
     if library and not os.path.isfile(library):
         logger.warning(f"Library file does not exist: {library}")
         library = None
+    run_mode = getattr(args, "mode", "relaxed") or "relaxed"
 
     return dict(
         input_file=input_file,
@@ -53,4 +54,5 @@ def process_args(args) -> dict:
         quiet=quiet,
         no_homology=no_homology,
         library=library,
+        run_mode=run_mode,
     )

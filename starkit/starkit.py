@@ -127,6 +127,7 @@ def run(
     quiet,
     no_homology=False,
     library=None,
+    run_mode="relaxed",
 ):
     """Core pipeline: parse input -> detect captains -> homology search ->
     tiered boundary detection -> extract cargo -> classify -> score."""
@@ -377,6 +378,30 @@ def run(
         allowed = level_map.get(evidence, [e for e in EvidenceLevel])
         starship_results = [r for r in starship_results if r.evidence_level in allowed]
 
+    # Strict mode: remove predictions that violate canonical structure
+    # Captain must be at the element edge with correct orientation
+    if run_mode == "strict":
+        before = len(starship_results)
+        strict_results = []
+        for r in starship_results:
+            # Homology-only predictions without a real captain are excluded
+            if r.captain.evalue >= 1.0:
+                logger.info(
+                    f"Strict: removing {r.starship_id} (no captain gene)"
+                )
+                continue
+            # Captain must be at element edge with canonical orientation
+            if r.captain_orientation_flag:
+                logger.info(
+                    f"Strict: removing {r.starship_id} (captain orientation)"
+                )
+                continue
+            strict_results.append(r)
+        starship_results = strict_results
+        removed = before - len(starship_results)
+        if removed:
+            logger.info(f"Strict mode: removed {removed} prediction(s)")
+
     return StarKITRun(
         input_file=input_file,
         genome_stats=genome_stats,
@@ -384,6 +409,7 @@ def run(
         parameters=dict(
             output_prefix=output_prefix, evalue=evalue,
             min_size=min_size, max_size=max_size, evidence=evidence,
+            mode=run_mode,
         ),
         version=current_version,
     )
@@ -423,11 +449,12 @@ def execute(
     # Run the pipeline
     no_homology = kwargs.get("no_homology", False)
     library = kwargs.get("library", None)
+    run_mode = kwargs.get("run_mode", "relaxed")
     starkit_run = run(
         input_file, output_prefix, gff_file,
         evalue, min_size, max_size, evidence,
         use_log, quiet, no_homology=no_homology,
-        library=library,
+        library=library, run_mode=run_mode,
     )
 
     # Write output
