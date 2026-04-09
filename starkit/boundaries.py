@@ -25,7 +25,7 @@ from .settings import (
 
 logger = logging.getLogger(__name__)
 
-_MYB_PATTERNS = re.compile(r"myb|SANT|Myb_DNA-bind|PF13837|PF00249|IPR017930", re.IGNORECASE)
+_MYB_PATTERNS = re.compile(r"\bmyb\b|SANT|Myb_DNA-bind|PF13837|PF00249|IPR017930", re.IGNORECASE)
 
 
 def _is_myb_feature(feature):

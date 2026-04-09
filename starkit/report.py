@@ -152,9 +152,11 @@ def generate_svg_diagram(
                 )
 
     # Draw cargo genes first (below captain)
-    TAG_COLORS = {"nlr": "#dc3545", "fre": "#fd7e14", "duf3723": "#6f42c1",
-                  "secondary_metabolism": "#28a745", "drug_resistance": "#e83e8c",
-                  "transposase": "#c77c11"}
+    TAG_COLORS = {
+        "nlr": "#dc3545", "fre": "#fd7e14", "d37": "#6f42c1",
+        "plp": "#17a2b8", "secondary_metabolism": "#28a745",
+        "drug_resistance": "#e83e8c", "tyr": "#c77c11", "myb": "#20c997",
+    }
     for cargo in starship_result.cargo_genes:
         tag_color = TAG_COLORS.get(cargo.tag) if cargo.tag else None
         fill = tag_color if tag_color else ("#4B77BE" if cargo.strand >= 0 else "#6BAADB")
@@ -203,40 +205,37 @@ def generate_svg_diagram(
             css_class="gene-hover",
         )
 
-    # TIR markers (small filled rectangles at the boundaries)
-    tir_color = "#0b81d5"
-    if starship_result.tir_left is not None:
-        tir = starship_result.tir_left
-        tx = x_of(tir.start)
-        ty = track_y + (track_h - tir_h) / 2
-        tir_tip = f"Left TIR|{tir.sequence}|{tir.start:,}-{tir.end:,}"
+    # DR markers (blue rectangles at element boundaries, same style as TIRs)
+    dr_color = "#0b81d5"
+    if starship_result.tsd:
+        # Left DR
+        dr_lx = x_of(region_start)
+        dr_ly = track_y + (track_h - tir_h) / 2
+        dr_tip_l = f"Left DR|{starship_result.tsd}|{region_start:,}"
         lines.append(
-            f'  <rect x="{tx - tir_w / 2:.1f}" y="{ty:.1f}" '
+            f'  <rect x="{dr_lx - tir_w / 2:.1f}" y="{dr_ly:.1f}" '
             f'width="{tir_w}" height="{tir_h}" '
-            f'fill="{tir_color}" opacity="0.85" rx="1" '
-            f'class="gene-hover" data-tooltip="{tir_tip}"/>'
+            f'fill="{dr_color}" opacity="0.85" rx="1" '
+            f'class="gene-hover" data-tooltip="{dr_tip_l}"/>'
         )
         lines.append(
-            f'  <text x="{tx:.1f}" y="{ty - 2:.1f}" '
-            f'text-anchor="middle" fill="{tir_color}" font-size="8">'
-            f'TIR</text>'
+            f'  <text x="{dr_lx:.1f}" y="{dr_ly - 2:.1f}" '
+            f'text-anchor="middle" fill="{dr_color}" font-size="8">'
+            f'DR</text>'
         )
-
-    if starship_result.tir_right is not None:
-        tir = starship_result.tir_right
-        tx = x_of(tir.end)
-        ty = track_y + (track_h - tir_h) / 2
-        tir_tip = f"Right TIR|{tir.sequence}|{tir.start:,}-{tir.end:,}"
+        # Right DR
+        dr_rx = x_of(region_end)
+        dr_tip_r = f"Right DR|{starship_result.tsd}|{region_end:,}"
         lines.append(
-            f'  <rect x="{tx - tir_w / 2:.1f}" y="{ty:.1f}" '
+            f'  <rect x="{dr_rx - tir_w / 2:.1f}" y="{dr_ly:.1f}" '
             f'width="{tir_w}" height="{tir_h}" '
-            f'fill="{tir_color}" opacity="0.85" rx="1" '
-            f'class="gene-hover" data-tooltip="{tir_tip}"/>'
+            f'fill="{dr_color}" opacity="0.85" rx="1" '
+            f'class="gene-hover" data-tooltip="{dr_tip_r}"/>'
         )
         lines.append(
-            f'  <text x="{tx:.1f}" y="{ty - 2:.1f}" '
-            f'text-anchor="middle" fill="{tir_color}" font-size="8">'
-            f'TIR</text>'
+            f'  <text x="{dr_rx:.1f}" y="{dr_ly - 2:.1f}" '
+            f'text-anchor="middle" fill="{dr_color}" font-size="8">'
+            f'DR</text>'
         )
 
     # Scale bar
@@ -302,18 +301,41 @@ def generate_genome_map(starkit_run, width=900):
         return ""
 
     # Sort contigs by length descending
+    total_contigs = len(contig_lengths)
     sorted_contigs = sorted(contig_lengths.items(), key=lambda x: -x[1])
+
+    # Group starships by contig (needed for filtering)
+    ships_by_contig = {}
+    for s in starkit_run.starships:
+        ships_by_contig.setdefault(s.contig_id, []).append(s)
 
     pad_left = 140
     pad_right = 20
     bar_h = 14
     bar_gap = 6
     top_pad = 10
-    max_contigs = 30  # cap for very fragmented assemblies
-    if len(sorted_contigs) > max_contigs:
-        sorted_contigs = sorted_contigs[:max_contigs]
+    subtitle = ""
+
+    if total_contigs > 30:
+        # Show only contigs containing Starships
+        contigs_with_ships = {ctg for ctg in ships_by_contig}
+        sorted_contigs = [
+            (ctg, length) for ctg, length in sorted_contigs
+            if ctg in contigs_with_ships
+        ]
+        subtitle = (
+            f"Showing {len(sorted_contigs)} of {total_contigs:,} contigs "
+            f"(those containing predicted Starships)"
+        )
+    else:
+        sorted_contigs = sorted_contigs[:30]
+
+    if not sorted_contigs:
+        return ""
 
     height = top_pad + len(sorted_contigs) * (bar_h + bar_gap) + 30
+    if subtitle:
+        height += 16
     draw_w = width - pad_left - pad_right
     genome_max = sorted_contigs[0][1] if sorted_contigs else 1
 
@@ -327,10 +349,14 @@ def generate_genome_map(starkit_run, width=900):
         f'style="background:#fff;font-family:Oxygen,Garamond,Georgia,serif;font-size:10px;">'
     ]
 
-    # Group starships by contig
-    ships_by_contig = {}
-    for s in starships:
-        ships_by_contig.setdefault(s.contig_id, []).append(s)
+    # Add subtitle if filtered
+    if subtitle:
+        lines.append(
+            f'  <text x="{width / 2}" y="{top_pad + 4}" '
+            f'text-anchor="middle" fill="#888" font-size="9" font-style="italic">'
+            f'{subtitle}</text>'
+        )
+        top_pad += 16
 
     for i, (ctg_id, ctg_len) in enumerate(sorted_contigs):
         y = top_pad + i * (bar_h + bar_gap)

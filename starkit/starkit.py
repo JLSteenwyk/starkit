@@ -11,7 +11,7 @@ from Bio import SeqIO
 from .args_processing import process_args
 from .boundaries import define_boundaries, load_tir_pwms, load_family_reference
 from .captain import detect_captains
-from .cargo import extract_cargo
+from .cargo import extract_cargo, load_auxiliary_hmms, tag_proteins_by_hmm
 from .classify import classify_starships
 from .confidence import score_starships
 from .files import load_genome
@@ -139,6 +139,15 @@ def run(
     # Step 2: Detect captain genes
     captain_hits = detect_captains(records, CAPTAIN_HMM_DIR, evalue)
 
+    # Step 2a: Tag all proteins with auxiliary gene HMMs (once for the whole genome)
+    from .helpers import get_protein_sequences
+    all_proteins = get_protein_sequences(records)
+    aux_hmms = load_auxiliary_hmms()
+    hmm_tags = tag_proteins_by_hmm(
+        [(pid, seq) for pid, seq, _, _ in all_proteins],
+        aux_hmms,
+    ) if aux_hmms else {}
+
     # Step 2b: Classify captains early (needed for family-specific DR scanning)
     #          Store results to apply to StarshipResults later without re-running.
     captain_classifications = {}  # protein_id -> (family_name, family_score)
@@ -227,6 +236,7 @@ def run(
 
         cargo_genes = extract_cargo(
             record, boundary["start"], boundary["end"], captain.feature,
+            hmm_tags=hmm_tags,
         )
 
         result = StarshipResult(
@@ -309,6 +319,7 @@ def run(
             # Upgrade to captain-based prediction
             cargo_genes = extract_cargo(
                 record, hit.start, hit.end, sixframe_captain.feature,
+                hmm_tags=hmm_tags,
             )
             result = StarshipResult(
                 starship_id=f"starship_{next_idx:03d}",
@@ -330,7 +341,7 @@ def run(
                 sixframe_captain.hmm_name = fname
                 captain_classifications[sixframe_captain.protein_id] = (fname, fscore)
         else:
-            cargo_genes = extract_cargo(record, hit.start, hit.end, None)
+            cargo_genes = extract_cargo(record, hit.start, hit.end, None, hmm_tags=hmm_tags)
             result = _homology_hit_to_starship(hit, record, next_idx, cargo_genes)
 
         starship_results.append(result)

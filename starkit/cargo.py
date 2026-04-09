@@ -1,46 +1,129 @@
 """
-Cargo gene extraction module.
+Cargo gene extraction and annotation module.
 
 Cargo genes are the functional payload carried within Starship transposable
-elements. This module identifies all CDS features that fall within a
-Starship's boundaries, excluding the captain gene itself.
+elements. This module identifies CDS features within Starship boundaries
+and tags known auxiliary gene types using Pfam HMM domain searches.
 """
 
 import logging
-from typing import List
+import os
+from typing import Dict, List, Optional
+
+import pyhmmer
+import pyhmmer.easel
+import pyhmmer.plan7
 
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature
 
 from starkit.models import CargoGene
+from starkit.settings import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
+AUXILIARY_HMM_DIR = os.path.join(DATA_DIR, "auxiliary_hmms")
 
-def tag_cargo_gene(feature) -> str:
-    product = feature.qualifiers.get("product", [""])[0].lower()
-    note = " ".join(feature.qualifiers.get("note", [])).lower()
-    all_text = product + " " + note
-    if any(k in all_text for k in ["nb-arc", "nlr", "nod-like", "nacht"]):
-        return "nlr"
-    if any(k in all_text for k in ["ferric reductase", "fre_", "iron reductase"]):
-        return "fre"
-    if "duf3723" in all_text:
-        return "duf3723"
-    if any(k in all_text for k in ["polyketide", "pks", "nrps", "nonribosomal", "terpene synthase"]):
-        return "secondary_metabolism"
-    if any(k in all_text for k in ["abc transporter", "efflux", "drug resistance", "mfs transporter"]):
-        return "drug_resistance"
-    if any(k in all_text for k in ["duf3435", "tyrosine recombinase"]):
-        return "transposase"
-    return ""
+# Map HMM profile names to cargo tags
+_HMM_TAG_MAP = {
+    "DUF3435": "tyr",
+    "NB-ARC": "nlr",
+    "Ferric_reduct": "fre",
+    "Vip3A_N": "d37",          # DUF3723 family
+    "DUF3723": "d37",
+    "Aminotran_1_2": "plp",
+    "Myb_DNA-bind_4": "myb",
+    "Myb_DNA-binding": "myb",
+}
+
+# Default e-value threshold for auxiliary gene detection
+_AUX_EVALUE = 1e-5
+
+
+def load_auxiliary_hmms() -> List[pyhmmer.plan7.HMM]:
+    """Load auxiliary gene HMM profiles from the data directory."""
+    if not os.path.isdir(AUXILIARY_HMM_DIR):
+        return []
+
+    hmms = []
+    for fname in sorted(os.listdir(AUXILIARY_HMM_DIR)):
+        if not fname.endswith(".hmm"):
+            continue
+        path = os.path.join(AUXILIARY_HMM_DIR, fname)
+        try:
+            with pyhmmer.plan7.HMMFile(path) as hf:
+                for hmm in hf:
+                    hmms.append(hmm)
+        except Exception as e:
+            logger.warning(f"Could not load auxiliary HMM {fname}: {e}")
+
+    if hmms:
+        logger.info(f"Loaded {len(hmms)} auxiliary gene HMM profile(s)")
+    return hmms
+
+
+def tag_proteins_by_hmm(
+    proteins: List[tuple],
+    hmm_profiles: List[pyhmmer.plan7.HMM],
+    evalue_threshold: float = _AUX_EVALUE,
+) -> Dict[str, str]:
+    """Search proteins against auxiliary HMMs and return a tag map.
+
+    Parameters
+    ----------
+    proteins : list of (protein_id, protein_sequence_str)
+    hmm_profiles : list of pyhmmer HMM objects
+    evalue_threshold : float
+
+    Returns
+    -------
+    dict mapping protein_id -> tag string
+    """
+    if not proteins or not hmm_profiles:
+        return {}
+
+    alphabet = pyhmmer.easel.Alphabet.amino()
+    sequences = []
+    for pid, seq in proteins:
+        try:
+            sequences.append(
+                pyhmmer.easel.TextSequence(
+                    name=pid.encode() if isinstance(pid, str) else pid,
+                    sequence=seq,
+                ).digitize(alphabet)
+            )
+        except Exception:
+            continue
+
+    if not sequences:
+        return {}
+
+    tags = {}  # protein_id -> (tag, evalue) — keep best hit per protein
+
+    for top_hits in pyhmmer.hmmsearch(hmm_profiles, sequences):
+        query_name = top_hits.query.name
+        hmm_name = query_name.decode() if isinstance(query_name, bytes) else str(query_name)
+        tag = _HMM_TAG_MAP.get(hmm_name, "")
+        if not tag:
+            continue
+
+        for hit in top_hits:
+            if hit.included and hit.evalue <= evalue_threshold:
+                hit_name = hit.name
+                pid = hit_name.decode() if isinstance(hit_name, bytes) else str(hit_name)
+                # Keep the best (lowest e-value) tag per protein
+                if pid not in tags or hit.evalue < tags[pid][1]:
+                    tags[pid] = (tag, hit.evalue)
+
+    return {pid: tag for pid, (tag, _) in tags.items()}
 
 
 def extract_cargo(
     record: SeqRecord,
     start: int,
     end: int,
-    captain_feature: SeqFeature,
+    captain_feature: Optional[SeqFeature],
+    hmm_tags: Optional[Dict[str, str]] = None,
 ) -> List[CargoGene]:
     """Collect all CDS features from *record* that fall within [start, end].
 
@@ -54,8 +137,10 @@ def extract_cargo(
         Start coordinate of the Starship element boundary.
     end : int
         End coordinate of the Starship element boundary.
-    captain_feature : Bio.SeqFeature.SeqFeature
+    captain_feature : Bio.SeqFeature.SeqFeature or None
         The captain gene feature to exclude from the cargo list.
+    hmm_tags : dict or None
+        Pre-computed protein_id -> tag mapping from HMM search.
 
     Returns
     -------
@@ -92,7 +177,11 @@ def extract_cargo(
         )[0]
         product = feature.qualifiers.get("product", ["hypothetical protein"])[0]
         strand = feature.location.strand or 1
-        tag = tag_cargo_gene(feature)
+
+        # Get tag from HMM search results
+        tag = ""
+        if hmm_tags:
+            tag = hmm_tags.get(gene_id, "")
 
         cargo_genes.append(
             CargoGene(
