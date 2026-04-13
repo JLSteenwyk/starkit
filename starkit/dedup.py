@@ -93,7 +93,22 @@ def resolve_overlaps(starship_results: List[StarshipResult]) -> List[StarshipRes
     # Filter out merged duplicates
     kept = [r for i, r in enumerate(results) if i not in remove]
 
-    # Adjacency detection
+    # Re-number IDs (before setting cross-references so they use the new IDs)
+    for idx, result in enumerate(kept, 1):
+        result.starship_id = f"starship_{idx:03d}"
+
+    # Update nested_in references to new IDs (based on containment)
+    for r in kept:
+        if r.nested_in:
+            for parent in kept:
+                if (parent.contig_id == r.contig_id
+                        and parent.start <= r.start
+                        and parent.end >= r.end
+                        and parent.starship_id != r.starship_id):
+                    r.nested_in = parent.starship_id
+                    break
+
+    # Adjacency detection (uses new IDs)
     for i in range(len(kept)):
         for j in range(i + 1, len(kept)):
             a, b = kept[i], kept[j]
@@ -109,31 +124,6 @@ def resolve_overlaps(starship_results: List[StarshipResult]) -> List[StarshipRes
                 a.adjacent_to = b.starship_id
                 b.adjacent_to = a.starship_id
                 logger.info(f"Adjacent: {a.starship_id} and {b.starship_id} ({gap:,}bp gap)")
-
-    # Re-number IDs
-    for idx, result in enumerate(kept, 1):
-        result.starship_id = f"starship_{idx:03d}"
-        # Update nested_in references to old IDs
-        # (nested_in was set to the pre-renumber ID, but since we're
-        # renumbering, we need to update. For simplicity, store the
-        # parent's contig:start as a stable reference instead.)
-
-    # Fix nested_in to use new IDs
-    id_map = {}
-    for r in kept:
-        # Map old approximate identity to new ID
-        id_map[(r.contig_id, r.start, r.end)] = r.starship_id
-
-    for r in kept:
-        if r.nested_in:
-            # Find the parent by checking which kept result the old ID maps to
-            for parent in kept:
-                if (parent.contig_id == r.contig_id
-                        and parent.start <= r.start
-                        and parent.end >= r.end
-                        and parent.starship_id != r.starship_id):
-                    r.nested_in = parent.starship_id
-                    break
 
     if remove:
         logger.info(

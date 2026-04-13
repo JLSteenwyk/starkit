@@ -333,7 +333,19 @@ def generate_genome_map(starkit_run, width=900):
     if not sorted_contigs:
         return ""
 
-    height = top_pad + len(sorted_contigs) * (bar_h + bar_gap) + 30
+    # Collect families present for legend
+    families_present = []
+    seen = set()
+    for s in starkit_run.starships:
+        fam = s.captain_family
+        if fam not in seen:
+            seen.add(fam)
+            families_present.append(fam)
+    families_present.sort()
+
+    legend_h = 24 if families_present else 0
+
+    height = top_pad + len(sorted_contigs) * (bar_h + bar_gap) + 30 + legend_h
     if subtitle:
         height += 16
     draw_w = width - pad_left - pad_right
@@ -388,6 +400,29 @@ def generate_genome_map(starkit_run, width=900):
                 f'rx="1" fill="{color}" opacity="0.85" '
                 f'class="gene-hover" data-tooltip="{tip}"/>'
             )
+
+    # Legend (color swatches for families present)
+    if families_present:
+        legend_y = top_pad + len(sorted_contigs) * (bar_h + bar_gap) + 10
+        lx = pad_left
+        lines.append(
+            f'  <text x="{lx}" y="{legend_y + 9}" fill="#444" font-size="9" '
+            f'font-weight="600">Families:</text>'
+        )
+        lx += 55
+        for fam in families_present:
+            color = FAMILY_COLORS.get(fam, "#999")
+            lines.append(
+                f'  <rect x="{lx}" y="{legend_y + 2}" width="10" height="10" '
+                f'rx="2" fill="{color}" opacity="0.85"/>'
+            )
+            lines.append(
+                f'  <text x="{lx + 14}" y="{legend_y + 11}" fill="#444" font-size="9">'
+                f'{fam}</text>'
+            )
+            lx += 18 + len(fam) * 6 + 8
+            if lx > width - 100:
+                break
 
     # Scale bar
     scale_y = height - 12
