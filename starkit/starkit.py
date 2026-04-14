@@ -10,7 +10,7 @@ from Bio import SeqIO
 
 from .args_processing import process_args
 from .boundaries import define_boundaries, load_tir_pwms, load_family_reference
-from .captain import detect_captains
+from .captain import detect_captains, load_hmm_profiles, full_genome_captain_search
 from .cargo import extract_cargo, load_auxiliary_hmms, tag_proteins_by_hmm
 from .classify import classify_starships
 from .confidence import score_starships
@@ -136,10 +136,30 @@ def run(
     records = load_genome(input_file, gff_file)
     genome_stats = compute_genome_stats(records)
 
-    # Step 2: Detect captain genes
+    # Step 2: Detect captain genes from annotated proteins
     captain_hits = detect_captains(records, CAPTAIN_HMM_DIR, evalue)
 
-    # Step 2a: Tag all proteins with auxiliary gene HMMs (once for the whole genome)
+    # Step 2a: Full-genome six-frame captain search to catch unannotated captains.
+    # Gene predictors sometimes miss captain genes — search the raw sequence
+    # in all 6 reading frames. Uses stricter e-value to control false positives.
+    try:
+        captain_hmm_profiles = load_hmm_profiles(CAPTAIN_HMM_DIR)
+        sixframe_novel = full_genome_captain_search(
+            records,
+            captain_hmm_profiles,
+            evalue_threshold=1e-15,
+            existing_captains=captain_hits,
+        )
+        if sixframe_novel:
+            logger.info(
+                f"Full-genome six-frame search found {len(sixframe_novel)} "
+                f"additional captain(s) not present in annotation"
+            )
+            captain_hits.extend(sixframe_novel)
+    except Exception as e:
+        logger.warning(f"Full-genome captain search failed: {e}")
+
+    # Step 2b: Tag all proteins with auxiliary gene HMMs (once for the whole genome)
     from .helpers import get_protein_sequences
     all_proteins = get_protein_sequences(records)
     aux_hmms = load_auxiliary_hmms()
@@ -148,7 +168,7 @@ def run(
         aux_hmms,
     ) if aux_hmms else {}
 
-    # Step 2b: Classify captains early (needed for family-specific DR scanning)
+    # Step 2c: Classify captains early (needed for family-specific DR scanning)
     #          Store results to apply to StarshipResults later without re-running.
     captain_classifications = {}  # protein_id -> (family_name, family_score)
     family_hmm_dir = FAMILY_HMM_DIR
@@ -278,7 +298,7 @@ def run(
 
     # Step 5: Add novel homology-only Starships (no captain detected)
     # For each, attempt six-frame translation to find unannotated captains
-    from .captain import sixframe_captain_search, load_hmm_profiles
+    from .captain import sixframe_captain_search
     try:
         sixframe_hmms = load_hmm_profiles(CAPTAIN_HMM_DIR)
     except Exception:

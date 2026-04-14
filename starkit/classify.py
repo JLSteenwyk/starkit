@@ -95,9 +95,11 @@ def classify_captain(
     protein_seq: Optional[str] = None
     protein_id = captain_hit.protein_id
 
+    target_record = None
     for record in records:
         if record.id != captain_hit.contig_id:
             continue
+        target_record = record
         for feature in record.features:
             if feature.type != "CDS":
                 continue
@@ -113,7 +115,20 @@ def classify_captain(
         if protein_seq is not None:
             break
 
-    if protein_seq is None:
+    # Fallback: translate the region directly (for six-frame captains whose
+    # synthetic features don't carry a translation qualifier).
+    if protein_seq is None and target_record is not None:
+        try:
+            nuc_seq = target_record.seq[captain_hit.start:captain_hit.end]
+            if captain_hit.strand < 0:
+                nuc_seq = nuc_seq.reverse_complement()
+            # Trim to multiple of 3
+            nuc_seq = nuc_seq[:len(nuc_seq) - len(nuc_seq) % 3]
+            protein_seq = str(nuc_seq.translate(table=1)).rstrip("*")
+        except Exception:
+            protein_seq = None
+
+    if protein_seq is None or not protein_seq:
         logger.warning(
             f"Could not extract protein sequence for captain {protein_id}"
         )

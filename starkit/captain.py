@@ -294,3 +294,186 @@ def sixframe_captain_search(
         return [hits[0]]
 
     return []
+
+
+def _sixframe_orfs_from_seq(
+    record_id: str,
+    seq_start: int,
+    full_seq,
+    alphabet,
+    min_aa_len: int = 100,
+):
+    """Generate ORFs from six-frame translation of a sequence.
+
+    Yields (orf_id, digitised_sequence, genomic_start, genomic_end, strand).
+    """
+    length = len(full_seq)
+    rc_full = full_seq.reverse_complement()
+
+    for frame in range(3):
+        # Forward strand
+        subseq = full_seq[frame:]
+        subseq = subseq[:len(subseq) - len(subseq) % 3]
+        if len(subseq) >= min_aa_len * 3:
+            protein = str(subseq.translate(table=1))
+            aa_pos = 0
+            for orf_idx, orf in enumerate(protein.split("*")):
+                if len(orf) >= min_aa_len:
+                    genomic_start = seq_start + frame + aa_pos * 3
+                    genomic_end = genomic_start + len(orf) * 3
+                    orf_id = f"6f_{record_id}_{frame}f_{genomic_start}"
+                    digitised = pyhmmer.easel.TextSequence(
+                        name=orf_id.encode(),
+                        sequence=orf,
+                    ).digitize(alphabet)
+                    yield orf_id, digitised, genomic_start, genomic_end, 1
+                aa_pos += len(orf) + 1  # +1 for the stop codon
+
+        # Reverse strand
+        subseq_rc = rc_full[frame:]
+        subseq_rc = subseq_rc[:len(subseq_rc) - len(subseq_rc) % 3]
+        if len(subseq_rc) >= min_aa_len * 3:
+            protein_rc = str(subseq_rc.translate(table=1))
+            aa_pos = 0
+            for orf_idx, orf in enumerate(protein_rc.split("*")):
+                if len(orf) >= min_aa_len:
+                    rc_start = frame + aa_pos * 3
+                    rc_end = rc_start + len(orf) * 3
+                    genomic_end = seq_start + length - rc_start
+                    genomic_start = seq_start + length - rc_end
+                    orf_id = f"6f_{record_id}_{frame}r_{genomic_start}"
+                    digitised = pyhmmer.easel.TextSequence(
+                        name=orf_id.encode(),
+                        sequence=orf,
+                    ).digitize(alphabet)
+                    yield orf_id, digitised, genomic_start, genomic_end, -1
+                aa_pos += len(orf) + 1
+
+
+def full_genome_captain_search(
+    records,
+    hmm_profiles: List[pyhmmer.plan7.HMM],
+    evalue_threshold: float = 1e-15,
+    existing_captains: List[CaptainHit] = None,
+) -> List[CaptainHit]:
+    """Search for captain genes across the full genome via six-frame translation.
+
+    This supplements annotation-based captain detection by finding captains
+    that were missed by the gene predictor. Uses a stricter e-value threshold
+    than annotated captain search to control false positives.
+
+    Parameters
+    ----------
+    records : list of Bio.SeqRecord.SeqRecord
+        Genome contigs.
+    hmm_profiles : list of pyhmmer.plan7.HMM
+        Captain HMM profiles.
+    evalue_threshold : float
+        E-value threshold (default 1e-15, stricter than annotation search).
+    existing_captains : list of CaptainHit
+        Already-detected captains (from annotation). Six-frame hits
+        overlapping these are discarded (annotation takes precedence).
+
+    Returns
+    -------
+    list of CaptainHit
+        Novel captain hits from six-frame translation, not overlapping
+        any existing annotated captain.
+    """
+    from Bio.SeqFeature import SeqFeature, SimpleLocation
+
+    if existing_captains is None:
+        existing_captains = []
+
+    # Index existing captains by contig for fast overlap checks
+    existing_by_contig = {}
+    for cap in existing_captains:
+        existing_by_contig.setdefault(cap.contig_id, []).append((cap.start, cap.end))
+
+    alphabet = pyhmmer.easel.Alphabet.amino()
+    all_orf_sequences = []
+    all_orf_metadata = {}  # orf_id -> (contig_id, start, end, strand)
+
+    for record in records:
+        seq = record.seq
+        for orf_id, digitised, gs, ge, strand in _sixframe_orfs_from_seq(
+            record.id, 0, seq, alphabet, min_aa_len=100,
+        ):
+            all_orf_sequences.append(digitised)
+            all_orf_metadata[orf_id] = (record.id, gs, ge, strand)
+
+    if not all_orf_sequences:
+        return []
+
+    # Run the HMM search across all ORFs at once
+    all_hits = []
+    for top_hits in pyhmmer.hmmsearch(hmm_profiles, all_orf_sequences):
+        query_name = top_hits.query.name
+        hmm_name = query_name.decode() if isinstance(query_name, bytes) else str(query_name)
+        for hit in top_hits:
+            if hit.included and hit.evalue <= evalue_threshold:
+                hit_name = hit.name
+                orf_id = hit_name.decode() if isinstance(hit_name, bytes) else str(hit_name)
+                meta = all_orf_metadata.get(orf_id)
+                if meta is None:
+                    continue
+                contig_id, gs, ge, strand = meta
+
+                # Skip if this ORF overlaps an existing annotated captain
+                overlaps_existing = False
+                for ex_s, ex_e in existing_by_contig.get(contig_id, []):
+                    if gs < ex_e and ge > ex_s:
+                        overlaps_existing = True
+                        break
+                if overlaps_existing:
+                    continue
+
+                all_hits.append({
+                    "orf_id": orf_id,
+                    "contig_id": contig_id,
+                    "start": gs,
+                    "end": ge,
+                    "strand": strand,
+                    "evalue": hit.evalue,
+                    "score": hit.score,
+                    "hmm_name": hmm_name,
+                })
+
+    # Deduplicate overlapping six-frame hits (keep best e-value per region)
+    all_hits.sort(key=lambda h: h["evalue"])
+    kept = []
+    used_regions = {}  # contig_id -> list of (start, end)
+    for h in all_hits:
+        regions = used_regions.setdefault(h["contig_id"], [])
+        overlap = False
+        for s, e in regions:
+            if h["start"] < e and h["end"] > s:
+                overlap = True
+                break
+        if not overlap:
+            regions.append((h["start"], h["end"]))
+            kept.append(h)
+
+    # Convert to CaptainHit objects
+    captain_hits = []
+    for h in kept:
+        feature = SeqFeature(
+            location=SimpleLocation(h["start"], h["end"], strand=h["strand"]),
+            type="CDS",
+            qualifiers={"note": ["six-frame translation captain"]},
+        )
+        captain_hits.append(
+            CaptainHit(
+                feature=feature,
+                contig_id=h["contig_id"],
+                start=h["start"],
+                end=h["end"],
+                strand=h["strand"],
+                evalue=h["evalue"],
+                score=h["score"],
+                hmm_name=h["hmm_name"],
+                protein_id=f"sixframe_{h['orf_id']}",
+            )
+        )
+
+    return captain_hits
