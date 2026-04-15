@@ -61,12 +61,17 @@ class StarshipResult:
     truncated: bool = False
     boundary_method: str = "estimated"  # "homology", "dr_motif", "myb_tf", or "estimated"
     homology_identity: float = 0.0     # 0-1, from homology alignment
-    homology_coverage: float = 0.0     # 0-1, from homology alignment
+    homology_coverage: float = 0.0     # 0-1, fraction of REFERENCE Starship covered
+    homology_reference_id: str = ""     # Starbase ship_id of the best matching reference
+    homology_reference_family: str = ""  # Family of the best matching reference
     nested_in: Optional[str] = None    # starship_id of parent if nested
     adjacent_to: Optional[str] = None  # starship_id of nearby element
     additional_captains: list = field(default_factory=list)  # extra CaptainHits merged
     captain_orientation_flag: bool = False  # True if captain is on the wrong strand/position
     captain_truncated_flag: bool = False    # True if captain protein is unusually short
+    has_myb_marker: bool = False            # MYB/SANT cargo present
+    myb_at_opposite_edge: bool = False      # MYB/SANT at the opposite edge with inverted strand
+    has_duf3723_marker: bool = False        # DUF3723 cargo present
 
     @property
     def size(self) -> int:
@@ -81,11 +86,13 @@ class StarshipResult:
         """Classify the family assignment strength.
 
         Returns 'unclassified', 'putative_novel', or 'classified'.
-        'putative_novel' = captain detected but family score below threshold,
-        suggesting a potentially novel Starship family.
+        'putative_novel' = captain detected, family score > 0 but below
+        threshold, suggesting a potentially novel Starship family.
         """
         from .settings import WEAK_CLASSIFICATION_THRESHOLD
-        if self.captain_family == "unclassified" and self.family_score == 0.0:
+        # No family score at all -> unclassified (homology-only with inferred
+        # family name, or a failed classification)
+        if self.family_score == 0.0:
             return "unclassified"
         if self.family_score < WEAK_CLASSIFICATION_THRESHOLD:
             return "putative_novel"

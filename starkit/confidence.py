@@ -24,9 +24,11 @@ W_STRUCTURAL = 0.2
 def compute_evidence_level(result: StarshipResult) -> EvidenceLevel:
     """Determine the evidence level for a Starship prediction.
 
-    HIGH:   captain HMM hit + homology support, OR captain + structural features
-    MEDIUM: captain HMM hit alone, OR strong homology alone, OR partial structural
-    LOW:    weak homology only, no captain, no structural features
+    HIGH:   captain + homology OR captain + structural features OR
+            captain + MYB-at-opposite-edge (strong canonical marker)
+    MEDIUM: captain alone, strong homology alone, or partial structural
+    LOW:    weak homology only, no captain, no structural features,
+            captain orientation violation (demoted), Tier 3 boundaries
     """
     # Tier 3 (estimated) boundaries are unreliable — cap at LOW
     if result.boundary_method == "estimated":
@@ -38,10 +40,27 @@ def compute_evidence_level(result: StarshipResult) -> EvidenceLevel:
     has_any_tir = result.tir_left is not None or result.tir_right is not None
     has_tsd = result.tsd is not None
     has_structural = has_any_tir or has_tsd
+    has_myb_edge = getattr(result, "myb_at_opposite_edge", False)
+    has_duf3723 = getattr(result, "has_duf3723_marker", False)
+    orientation_bad = getattr(result, "captain_orientation_flag", False)
+
+    # A canonical MYB at the opposite edge is a strong structural marker on
+    # its own and can rescue an element to HIGH even without TIRs/TSD.
+    strong_marker = has_myb_edge or has_duf3723
+
+    # Orientation violation demotes the prediction by one level.
+    if orientation_bad:
+        if has_captain and has_homology and strong_marker:
+            return EvidenceLevel.MEDIUM
+        if has_captain:
+            return EvidenceLevel.MEDIUM
+        return EvidenceLevel.LOW
 
     if has_captain and has_homology:
         return EvidenceLevel.HIGH
     if has_captain and has_structural:
+        return EvidenceLevel.HIGH
+    if has_captain and strong_marker:
         return EvidenceLevel.HIGH
     if has_captain:
         return EvidenceLevel.MEDIUM
@@ -55,7 +74,7 @@ def compute_evidence_level(result: StarshipResult) -> EvidenceLevel:
 def compute_confidence_score(result: StarshipResult) -> float:
     """Compute a composite confidence score in [0, 1].
 
-    Four components, weighted:
+    Four weighted components plus a marker-gene bonus:
 
     - Captain (0.3): -log10(evalue) / 50, capped at 1.0.
       A strong HMM hit (e-value 1e-100) scores 1.0.
@@ -71,6 +90,14 @@ def compute_confidence_score(result: StarshipResult) -> float:
     - Structural (0.2): TIR and TSD presence.
       Both TIRs + TSD = 1.0, TIRs only = 0.6, TSD only = 0.4,
       any single TIR = 0.3, none = 0.0.
+
+    Marker bonuses (applied after the weighted sum):
+      + MYB/SANT at opposite edge with inverted orientation: +0.10
+      + MYB/SANT present (but not at the canonical edge): +0.03
+      + DUF3723 present: +0.05
+
+    Penalties:
+      - Captain orientation flag set: -0.15
     """
     # Captain component
     if result.captain.evalue < 1.0:
@@ -108,6 +135,19 @@ def compute_confidence_score(result: StarshipResult) -> float:
         + W_STRUCTURAL * structural_score
     )
 
+    # Marker bonuses for Starship-specific auxiliary genes
+    if getattr(result, "myb_at_opposite_edge", False):
+        score += 0.10
+    elif getattr(result, "has_myb_marker", False):
+        score += 0.03
+    if getattr(result, "has_duf3723_marker", False):
+        score += 0.05
+
+    # Penalty for orientation violations
+    if getattr(result, "captain_orientation_flag", False):
+        score -= 0.15
+
+    score = max(0.0, min(1.0, score))
     return round(score, 4)
 
 

@@ -11,7 +11,7 @@ from Bio import SeqIO
 from .args_processing import process_args
 from .boundaries import define_boundaries, load_tir_pwms, load_family_reference
 from .captain import detect_captains, load_hmm_profiles, full_genome_captain_search
-from .cargo import extract_cargo, load_auxiliary_hmms, tag_proteins_by_hmm
+from .cargo import extract_cargo, load_auxiliary_hmms, tag_proteins_by_hmm, sixframe_marker_search
 from .classify import classify_starships
 from .confidence import score_starships
 from .files import load_genome
@@ -80,6 +80,8 @@ def _homology_hit_to_starship(hit, record, idx, cargo_genes):
         boundary_method="homology",
         homology_identity=hit.identity,
         homology_coverage=hit.coverage,
+        homology_reference_id=hit.query_name,
+        homology_reference_family=hit.query_family,
     )
 
 
@@ -274,19 +276,56 @@ def run(
             boundary_method=boundary.get("boundary_method", "estimated"),
             homology_identity=best_homology.identity if best_homology else 0.0,
             homology_coverage=best_homology.coverage if best_homology else 0.0,
+            homology_reference_id=best_homology.query_name if best_homology else "",
+            homology_reference_family=best_homology.query_family if best_homology else "",
         )
 
-        # Flag captain orientation issues
+        # Flag captain orientation issues.
+        # Canonical: captain at one END of the element, pointing INWARD toward
+        # the rest of the element. For + strand captains, they belong at the
+        # 5' end (near start), pointing right into the cargo. For - strand
+        # captains, they belong at the 3' end (near end), pointing left.
+        #
+        # We flag if EITHER:
+        #   - the captain is not within the first/last 20% of the element
+        #     (position check), OR
+        #   - the captain points outward instead of inward (direction check).
         element_size = result.end - result.start
         if element_size > 0:
+            # Position check: how far from each edge is the captain?
+            dist_from_5p = captain.start - result.start   # 0 = flush at 5' edge
+            dist_from_3p = result.end - captain.end       # 0 = flush at 3' edge
+            edge_threshold = element_size * 0.20
+            near_5p = dist_from_5p <= edge_threshold
+            near_3p = dist_from_3p <= edge_threshold
+
             if captain.strand >= 0:
-                # + strand captain should be in the first 20% of the element
-                if captain.start - result.start > element_size * 0.20:
+                # + strand captain: must be near 5' end and pointing right (+)
+                if not near_5p:
                     result.captain_orientation_flag = True
             else:
-                # - strand captain should be in the last 20% of the element
-                if result.end - captain.end > element_size * 0.20:
+                # - strand captain: must be near 3' end and pointing left (-)
+                if not near_3p:
                     result.captain_orientation_flag = True
+
+            # Additionally: check merged additional captains. If any of the
+            # merged captains has an orientation inconsistent with the primary,
+            # flag the element as having overlapping/conflicting captains.
+            for extra in (result.additional_captains or []):
+                ex_5p = extra.start - result.start <= edge_threshold
+                ex_3p = result.end - extra.end <= edge_threshold
+                if extra.strand >= 0 and not ex_5p:
+                    result.captain_orientation_flag = True
+                    break
+                if extra.strand < 0 and not ex_3p:
+                    result.captain_orientation_flag = True
+                    break
+                # Also flag if extra captain points in opposite direction
+                # from primary — two captains facing away from each other
+                # indicates a split/fragmented element, not a canonical one.
+                if extra.strand != captain.strand:
+                    result.captain_orientation_flag = True
+                    break
 
         # Flag captain truncation (protein < 400 aa equivalent)
         captain_nt_len = captain.end - captain.start
@@ -354,6 +393,8 @@ def run(
                 boundary_method="homology",
                 homology_identity=hit.identity,
                 homology_coverage=hit.coverage,
+                homology_reference_id=hit.query_name,
+                homology_reference_family=hit.query_family,
             )
             # Classify the six-frame captain
             if family_hmms is not None:
@@ -395,6 +436,88 @@ def run(
 
     # Step 7: Resolve overlapping predictions
     starship_results = resolve_overlaps(starship_results)
+
+    # Step 7a: Annotate Starship-associated marker genes (MYB/SANT, DUF3723).
+    # These are the two most Starship-specific auxiliary genes and serve as
+    # confidence markers. A MYB/SANT gene at the opposite edge from the
+    # captain with inverted orientation strongly supports element boundaries.
+    #
+    # Supplement annotated cargo with de novo six-frame marker search — some
+    # gene predictors miss MYB/SANT or DUF3723 genes, so we scan the element
+    # region directly for these markers.
+    for r in starship_results:
+        existing_myb_duf = [c for c in r.cargo_genes if c.tag in ("myb", "d37")]
+        # Only run six-frame search if markers are missing from annotation,
+        # to keep runtime low.
+        if not existing_myb_duf and aux_hmms:
+            denovo_markers = sixframe_marker_search(
+                r.region, r.start, r.end, aux_hmms,
+            )
+            # Don't duplicate annotated genes at the same position
+            existing_positions = {
+                (c.start, c.end) for c in r.cargo_genes
+            }
+            for marker in denovo_markers:
+                overlaps = any(
+                    marker.start < end and marker.end > start
+                    for start, end in existing_positions
+                )
+                if not overlaps:
+                    r.cargo_genes.append(marker)
+                    logger.info(
+                        f"De novo {marker.tag} marker in {r.starship_id}: "
+                        f"{r.contig_id}:{marker.start:,}-{marker.end:,}"
+                    )
+
+        myb_genes = [c for c in r.cargo_genes if c.tag == "myb"]
+        duf_genes = [c for c in r.cargo_genes if c.tag == "d37"]
+        r.has_myb_marker = bool(myb_genes)
+        r.has_duf3723_marker = bool(duf_genes)
+
+        # Check MYB/SANT position + orientation relative to the captain.
+        # Canonical: captain at one edge, MYB/SANT at the OPPOSITE edge,
+        # pointing in the OPPOSITE direction.
+        if myb_genes:
+            element_size = r.end - r.start
+            edge_threshold = element_size * 0.25 if element_size > 0 else 0
+            captain_near_5p = (r.captain.start - r.start) <= edge_threshold
+            for myb in myb_genes:
+                myb_near_5p = (myb.start - r.start) <= edge_threshold
+                myb_near_3p = (r.end - myb.end) <= edge_threshold
+                opposite_edge = (
+                    (captain_near_5p and myb_near_3p)
+                    or (not captain_near_5p and myb_near_5p)
+                )
+                opposite_strand = (
+                    (r.captain.strand >= 0 and myb.strand < 0)
+                    or (r.captain.strand < 0 and myb.strand >= 0)
+                )
+                if opposite_edge and opposite_strand:
+                    r.myb_at_opposite_edge = True
+                    break
+
+    # Step 7b: Re-check orientation flags now that additional_captains are
+    # populated by resolve_overlaps. If any merged captain points in a
+    # different direction than the primary, flag the element.
+    for r in starship_results:
+        if r.captain_orientation_flag:
+            continue  # already flagged
+        primary_strand = r.captain.strand
+        element_size = r.end - r.start
+        edge_threshold = element_size * 0.20 if element_size > 0 else 0
+        for extra in (r.additional_captains or []):
+            ex_5p = extra.start - r.start <= edge_threshold
+            ex_3p = r.end - extra.end <= edge_threshold
+            # Extra captain not at a canonical edge, or facing opposite way
+            if extra.strand != primary_strand:
+                r.captain_orientation_flag = True
+                break
+            if extra.strand >= 0 and not ex_5p:
+                r.captain_orientation_flag = True
+                break
+            if extra.strand < 0 and not ex_3p:
+                r.captain_orientation_flag = True
+                break
 
     # Step 8: Score confidence
     score_starships(starship_results)

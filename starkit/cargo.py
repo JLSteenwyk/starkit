@@ -118,6 +118,140 @@ def tag_proteins_by_hmm(
     return {pid: tag for pid, (tag, _) in tags.items()}
 
 
+def sixframe_marker_search(
+    record,
+    region_start: int,
+    region_end: int,
+    hmm_profiles: List[pyhmmer.plan7.HMM],
+    evalue_threshold: float = 1e-5,
+) -> List[CargoGene]:
+    """Search a region for MYB/SANT and DUF3723 marker genes via six-frame
+    translation. Used to find markers missed by the gene predictor.
+
+    Only the marker-relevant HMMs are used (MYB/SANT, DUF3723, Vip3A_N).
+    Returns CargoGene objects for any hits found.
+    """
+    if not hmm_profiles:
+        return []
+
+    # Only use marker-relevant HMMs
+    marker_tags = {"myb", "d37"}
+    marker_hmms = []
+    for hmm in hmm_profiles:
+        hname = hmm.name
+        hname_str = hname.decode() if isinstance(hname, bytes) else str(hname)
+        tag = _HMM_TAG_MAP.get(hname_str, "")
+        if tag in marker_tags:
+            marker_hmms.append(hmm)
+
+    if not marker_hmms:
+        return []
+
+    alphabet = pyhmmer.easel.Alphabet.amino()
+    seq = record.seq[region_start:region_end]
+    rc_seq = seq.reverse_complement()
+
+    orf_sequences = []
+    orf_metadata = {}  # orf_id -> (gs, ge, strand)
+    min_aa_len = 50  # allow smaller ORFs for marker genes
+
+    for frame in range(3):
+        # Forward strand
+        subseq = seq[frame:]
+        subseq = subseq[:len(subseq) - len(subseq) % 3]
+        if len(subseq) >= min_aa_len * 3:
+            protein = str(subseq.translate(table=1))
+            aa_pos = 0
+            for orf_idx, orf in enumerate(protein.split("*")):
+                if len(orf) >= min_aa_len:
+                    gs = region_start + frame + aa_pos * 3
+                    ge = gs + len(orf) * 3
+                    orf_id = f"mk_{record.id}_{frame}f_{gs}"
+                    orf_sequences.append(
+                        pyhmmer.easel.TextSequence(
+                            name=orf_id.encode(), sequence=orf,
+                        ).digitize(alphabet)
+                    )
+                    orf_metadata[orf_id] = (gs, ge, 1)
+                aa_pos += len(orf) + 1
+
+        # Reverse strand
+        subseq_rc = rc_seq[frame:]
+        subseq_rc = subseq_rc[:len(subseq_rc) - len(subseq_rc) % 3]
+        if len(subseq_rc) >= min_aa_len * 3:
+            protein_rc = str(subseq_rc.translate(table=1))
+            aa_pos = 0
+            for orf_idx, orf in enumerate(protein_rc.split("*")):
+                if len(orf) >= min_aa_len:
+                    rc_start = frame + aa_pos * 3
+                    rc_end = rc_start + len(orf) * 3
+                    ge = region_end - rc_start
+                    gs = region_end - rc_end
+                    orf_id = f"mk_{record.id}_{frame}r_{gs}"
+                    orf_sequences.append(
+                        pyhmmer.easel.TextSequence(
+                            name=orf_id.encode(), sequence=orf,
+                        ).digitize(alphabet)
+                    )
+                    orf_metadata[orf_id] = (gs, ge, -1)
+                aa_pos += len(orf) + 1
+
+    if not orf_sequences:
+        return []
+
+    # Search with marker HMMs
+    marker_genes = []
+    seen_regions = []  # (start, end) tuples to dedupe overlapping ORFs
+
+    hits = []
+    for top_hits in pyhmmer.hmmsearch(marker_hmms, orf_sequences):
+        query_name = top_hits.query.name
+        hmm_name = query_name.decode() if isinstance(query_name, bytes) else str(query_name)
+        tag = _HMM_TAG_MAP.get(hmm_name, "")
+        if not tag:
+            continue
+        for hit in top_hits:
+            if hit.included and hit.evalue <= evalue_threshold:
+                hit_name = hit.name
+                orf_id = hit_name.decode() if isinstance(hit_name, bytes) else str(hit_name)
+                meta = orf_metadata.get(orf_id)
+                if meta is None:
+                    continue
+                gs, ge, strand = meta
+                hits.append({
+                    "orf_id": orf_id,
+                    "start": gs,
+                    "end": ge,
+                    "strand": strand,
+                    "evalue": hit.evalue,
+                    "tag": tag,
+                })
+
+    # Deduplicate overlapping hits (keep best e-value per region)
+    hits.sort(key=lambda h: h["evalue"])
+    for h in hits:
+        overlapping = False
+        for s, e in seen_regions:
+            if h["start"] < e and h["end"] > s:
+                overlapping = True
+                break
+        if overlapping:
+            continue
+        seen_regions.append((h["start"], h["end"]))
+        marker_genes.append(
+            CargoGene(
+                gene_id=f"sixframe_{h['orf_id']}",
+                product=f"six-frame predicted {h['tag'].upper()}",
+                start=h["start"],
+                end=h["end"],
+                strand=h["strand"],
+                tag=h["tag"],
+            )
+        )
+
+    return marker_genes
+
+
 def extract_cargo(
     record: SeqRecord,
     start: int,

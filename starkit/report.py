@@ -926,9 +926,32 @@ table.params td {
     <th>Starbase novelty</th>
     <td>
         {% if s.homology_identity >= 0.80 and s.homology_coverage >= 0.50 %}
-        <span class="badge badge-known">Known</span> &mdash; matches Starbase reference ({{ "%.0f" | format(s.homology_identity * 100) }}% identity, {{ "%.0f" | format(s.homology_coverage * 100) }}% coverage)
+        <span class="badge badge-known">Known</span>
+        &mdash; matches Starbase reference
+        {% if s.homology_reference_id %}
+        <a href="https://starbase.serve.scilifelab.se/ships/{{ s.homology_reference_id }}" target="_blank" class="mono">#{{ s.homology_reference_id }}</a>
+        {% if s.homology_reference_family and s.homology_reference_family != "unclassified" %}({{ s.homology_reference_family }}){% endif %}
+        {% endif %}
+        <br>
+        <small style="color:#888;">{{ "%.0f" | format(s.homology_identity * 100) }}% identity over {{ "%.0f" | format(s.homology_coverage * 100) }}% of the reference Starship length</small>
         {% else %}
         <span class="badge badge-new">New</span> &mdash; no significant match in Starbase
+        {% endif %}
+    </td>
+</tr>
+<tr>
+    <th>Marker genes</th>
+    <td>
+        {% if s.myb_at_opposite_edge %}
+        <span class="badge" style="background:#20c997;">MYB/SANT at opposite edge</span>
+        {% elif s.has_myb_marker %}
+        MYB/SANT present
+        {% endif %}
+        {% if s.has_duf3723_marker %}
+        <span class="badge" style="background:#6f42c1;">DUF3723</span>
+        {% endif %}
+        {% if not s.has_myb_marker and not s.has_duf3723_marker %}
+        <span style="color:#888;">none detected</span>
         {% endif %}
     </td>
 </tr>
