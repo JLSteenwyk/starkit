@@ -29,6 +29,9 @@ class HomologyHit:
     identity: float        # percent identity (0-1)
     coverage: float        # fraction of query covered (0-1)
     strand: int            # 1 for forward, -1 for reverse
+    query_start: int = 0   # start position in reference (query) coords
+    query_end: int = 0     # end position in reference (query) coords
+    fragments_merged: int = 1  # how many raw hits were merged into this
 
 
 def load_reference_starships(ref_fasta_path: str) -> str:
@@ -59,62 +62,206 @@ def search_homology(
     ref_fasta_path: str,
     min_identity: float = 0.80,
     min_coverage: float = 0.50,
-) -> List[HomologyHit]:
+    min_fragment_coverage: float = 0.15,
+) -> Tuple[List[HomologyHit], List[HomologyHit]]:
     """
     Search for Starship homologs in the genome using minimap2.
 
-    Args:
-        genome_fasta_path: Path to the input genome FASTA (we'll create a temp FASTA from SeqRecords)
-        ref_fasta_path: Path to reference Starship FASTA
-        min_identity: Minimum alignment identity (0-1)
-        min_coverage: Minimum fraction of reference Starship covered
-
-    Returns:
-        List of HomologyHit objects passing thresholds
+    Returns two lists:
+      - hits: full hits passing both identity AND coverage thresholds
+      - fragments: partial hits passing identity but below full coverage
+        (used by the fragment merging pass to reconstruct large
+        rearranged elements from their conserved edges)
     """
-    # Index the genome for nucleotide-to-nucleotide alignment
-    # Use asm20 preset which is good for cross-species/divergent alignments
     aligner = mappy.Aligner(genome_fasta_path, preset="asm20", best_n=5)
     if not aligner:
         logger.warning("Failed to build minimap2 index for genome")
-        return []
+        return [], []
 
     hits = []
+    fragments = []
 
-    # Read reference sequences and align each against the genome
     for name, seq, qual in mappy.fastx_read(ref_fasta_path):
         ship_id, family, query_length = parse_ref_header(name)
         if query_length == 0:
             query_length = len(seq)
 
-        # Collect all alignments for this reference Starship
         alignments = list(aligner.map(seq))
         if not alignments:
             continue
 
-        # For each alignment, compute identity and coverage
         for aln in alignments:
             identity = aln.mlen / aln.blen if aln.blen > 0 else 0
-            # Coverage = how much of the query (reference Starship) was aligned
             coverage = (aln.q_en - aln.q_st) / query_length if query_length > 0 else 0
 
-            if identity >= min_identity and coverage >= min_coverage:
-                strand = 1 if aln.strand == 1 else -1
-                hits.append(HomologyHit(
-                    contig_id=aln.ctg,
-                    start=aln.r_st,
-                    end=aln.r_en,
-                    query_name=ship_id,
-                    query_family=family,
-                    query_length=query_length,
-                    aligned_length=aln.r_en - aln.r_st,
-                    identity=round(identity, 4),
-                    coverage=round(coverage, 4),
-                    strand=strand,
-                ))
+            if identity < min_identity:
+                continue
 
-    logger.info(f"Found {len(hits)} homology hit(s) passing thresholds")
-    return hits
+            strand = 1 if aln.strand == 1 else -1
+            hit = HomologyHit(
+                contig_id=aln.ctg,
+                start=aln.r_st,
+                end=aln.r_en,
+                query_name=ship_id,
+                query_family=family,
+                query_length=query_length,
+                aligned_length=aln.r_en - aln.r_st,
+                identity=round(identity, 4),
+                coverage=round(coverage, 4),
+                strand=strand,
+                query_start=aln.q_st,
+                query_end=aln.q_en,
+            )
+
+            if coverage >= min_coverage:
+                hits.append(hit)
+            elif coverage >= min_fragment_coverage:
+                fragments.append(hit)
+
+    logger.info(
+        f"Found {len(hits)} full homology hit(s) and {len(fragments)} "
+        f"fragment hit(s)"
+    )
+    return hits, fragments
+
+
+def merge_fragment_pairs(
+    fragments: List[HomologyHit],
+    max_element_size: int = 700000,
+    min_combined_coverage: float = 0.60,
+) -> List[HomologyHit]:
+    """
+    Merge fragment hits that cover different parts of the SAME reference
+    Starship on the SAME contig into a single reconstructed element.
+
+    This addresses cases where a large Starship has rearranged internals
+    but conserved edges: minimap2 reports two separate partial alignments
+    (one covering reference bases 1-60kb, another covering 300-400kb),
+    and we want to merge them into one element spanning both.
+
+    The two fragments must:
+      - map to the same reference Starship
+      - cover non-overlapping parts of the reference (different q-coords)
+      - combined cover at least min_combined_coverage of the reference
+      - be on the same contig within max_element_size bp of each other
+      - be in the same strand orientation
+    """
+    if not fragments:
+        return []
+
+    # Group fragments by (contig, reference)
+    groups: dict = {}
+    for f in fragments:
+        key = (f.contig_id, f.query_name)
+        groups.setdefault(key, []).append(f)
+
+    merged = []
+    for key, frags in groups.items():
+        if len(frags) < 2:
+            continue
+
+        contig_id, ref_name = key
+        frags.sort(key=lambda f: f.start)
+
+        # For each pair, check if they can be merged
+        used = set()
+        for i in range(len(frags)):
+            if i in used:
+                continue
+            a = frags[i]
+
+            # Greedy: absorb every compatible partner into a
+            cluster = [a]
+            cluster_indices = {i}
+
+            for j in range(i + 1, len(frags)):
+                if j in used or j in cluster_indices:
+                    continue
+                b = frags[j]
+
+                # Must be on same strand
+                if a.strand != b.strand:
+                    continue
+
+                # Genomic distance check — don't merge hits too far apart
+                genomic_span = max(x.end for x in cluster) - min(x.start for x in cluster + [b])
+                if genomic_span > max_element_size:
+                    continue
+
+                # Check that b's query coords don't heavily overlap any member
+                # of the cluster (we want non-redundant fragments of the same
+                # reference)
+                b_overlaps_cluster = False
+                for c in cluster:
+                    q_overlap_start = max(c.query_start, b.query_start)
+                    q_overlap_end = min(c.query_end, b.query_end)
+                    q_overlap = max(0, q_overlap_end - q_overlap_start)
+                    c_q_len = c.query_end - c.query_start
+                    b_q_len = b.query_end - b.query_start
+                    if c_q_len > 0 and q_overlap / c_q_len > 0.5:
+                        b_overlaps_cluster = True
+                        break
+                    if b_q_len > 0 and q_overlap / b_q_len > 0.5:
+                        b_overlaps_cluster = True
+                        break
+
+                if b_overlaps_cluster:
+                    continue
+
+                cluster.append(b)
+                cluster_indices.add(j)
+
+            if len(cluster) < 2:
+                continue
+
+            # Compute combined coverage
+            ref_len = a.query_length
+            if ref_len <= 0:
+                continue
+
+            # Union of query ranges
+            q_ranges = sorted((c.query_start, c.query_end) for c in cluster)
+            union = []
+            for qs, qe in q_ranges:
+                if union and qs <= union[-1][1]:
+                    union[-1] = (union[-1][0], max(union[-1][1], qe))
+                else:
+                    union.append((qs, qe))
+            combined_covered = sum(qe - qs for qs, qe in union)
+            combined_coverage = combined_covered / ref_len
+
+            if combined_coverage < min_combined_coverage:
+                continue
+
+            # Build merged hit
+            merged_start = min(c.start for c in cluster)
+            merged_end = max(c.end for c in cluster)
+            best_identity = max(c.identity for c in cluster)
+
+            merged.append(HomologyHit(
+                contig_id=contig_id,
+                start=merged_start,
+                end=merged_end,
+                query_name=ref_name,
+                query_family=cluster[0].query_family,
+                query_length=ref_len,
+                aligned_length=merged_end - merged_start,
+                identity=round(best_identity, 4),
+                coverage=round(combined_coverage, 4),
+                strand=cluster[0].strand,
+                query_start=min(c.query_start for c in cluster),
+                query_end=max(c.query_end for c in cluster),
+                fragments_merged=len(cluster),
+            ))
+
+            for idx in cluster_indices:
+                used.add(idx)
+
+    if merged:
+        logger.info(
+            f"Reconstructed {len(merged)} element(s) from fragment pairs"
+        )
+    return merged
 
 
 def merge_overlapping_hits(hits: List[HomologyHit], merge_distance: int = 5000) -> List[HomologyHit]:
@@ -159,6 +306,11 @@ def merge_overlapping_hits(hits: List[HomologyHit], merge_distance: int = 5000) 
                     identity=best.identity,
                     coverage=best.coverage,
                     strand=best.strand,
+                    query_start=best.query_start,
+                    query_end=best.query_end,
+                    fragments_merged=max(
+                        current.fragments_merged, hit.fragments_merged
+                    ),
                 )
             else:
                 merged.append(current)
@@ -236,8 +388,13 @@ def detect_by_homology(
     if ref_path is None:
         return []
 
-    hits = search_homology(genome_fasta_path, ref_path, min_identity, min_coverage)
-    merged = merge_overlapping_hits(hits)
+    hits, fragments = search_homology(
+        genome_fasta_path, ref_path, min_identity, min_coverage,
+    )
+    # Reconstruct large elements from fragment pairs
+    reconstructed = merge_fragment_pairs(fragments)
+    all_hits = hits + reconstructed
+    merged = merge_overlapping_hits(all_hits)
     novel = filter_novel_hits(merged, captain_starships)
 
     return novel

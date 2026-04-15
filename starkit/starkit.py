@@ -100,6 +100,36 @@ def _find_best_homology_for_captain(captain, homology_hits):
     return best
 
 
+def _find_nearby_homology_end(captain, homology_hits, fragment_hits=None, max_distance=700000):
+    """Find the 3' end position of any homology hit/fragment nearby the
+    captain (on the same contig, within max_distance). Returns the farthest
+    valid 3' position as a boundary hint for DR scanning, or None.
+    """
+    candidates = []
+    all_hits = list(homology_hits or [])
+    if fragment_hits:
+        all_hits.extend(fragment_hits)
+
+    for hit in all_hits:
+        if hit.contig_id != captain.contig_id:
+            continue
+        # Look for hits that extend downstream of the captain
+        if captain.strand >= 0:
+            if hit.end >= captain.start and hit.end - captain.start <= max_distance:
+                candidates.append(hit.end)
+        else:
+            if hit.start <= captain.end and captain.end - hit.start <= max_distance:
+                candidates.append(hit.start)
+
+    if not candidates:
+        return None
+    # Return the farthest boundary — real large elements get a hint toward
+    # their actual 3' position.
+    if captain.strand >= 0:
+        return max(candidates)
+    return min(candidates)
+
+
 def _homology_hit_used_by_captain(hit, captain_starships):
     """Check if a homology hit region is already covered by a captain prediction."""
     for sr in captain_starships:
@@ -195,6 +225,7 @@ def run(
 
     # Step 3: Run homology search (needed BEFORE boundary detection for Tier 1)
     homology_hits = []
+    fragment_hits = []
     genome_fasta = None
     combined_ref = None
     try:
@@ -222,12 +253,27 @@ def run(
                 combined_ref.close()
                 ref_fasta = combined_ref.name
 
-            from .homology import search_homology, merge_overlapping_hits
-            raw_hits = search_homology(
+            from .homology import (
+                search_homology,
+                merge_overlapping_hits,
+                merge_fragment_pairs,
+            )
+            full_hits, raw_fragment_hits = search_homology(
                 genome_fasta, ref_fasta,
                 min_identity=0.80, min_coverage=0.50,
             )
-            homology_hits = merge_overlapping_hits(raw_hits, merge_distance=1000)
+            fragment_hits = raw_fragment_hits  # keep for boundary hinting
+            # Reconstruct large elements from fragment pairs (addresses
+            # cases where the element middle has rearranged but the
+            # edges match a known reference)
+            reconstructed = merge_fragment_pairs(fragment_hits)
+            if reconstructed:
+                logger.info(
+                    f"Reconstructed {len(reconstructed)} element(s) from "
+                    f"conserved edges of rearranged Starships"
+                )
+            all_hits = full_hits + reconstructed
+            homology_hits = merge_overlapping_hits(all_hits, merge_distance=1000)
     finally:
         if genome_fasta and os.path.exists(genome_fasta):
             os.unlink(genome_fasta)
@@ -248,12 +294,20 @@ def run(
         # Find best overlapping homology hit for Tier 1
         best_homology = _find_best_homology_for_captain(captain, homology_hits)
 
+        # Find a nearby homology/fragment 3' position as a boundary hint
+        # for Tier 2 DR scanning (helps pick the right DR pair when many
+        # copies of the same motif exist)
+        homology_end_hint = _find_nearby_homology_end(
+            captain, homology_hits, fragment_hits,
+        )
+
         # Tiered boundary detection
         boundary = define_boundaries(
             captain, record, min_size, max_size,
             pwm_data=pwm_data,
             family_ref=family_ref,
             homology_hit=best_homology,
+            homology_end_hint=homology_end_hint,
         )
 
         cargo_genes = extract_cargo(

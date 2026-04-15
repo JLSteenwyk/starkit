@@ -150,13 +150,14 @@ def find_dr_pair(sequence, captain_start_in_seq, motif, min_size, max_size):
 
 
 def find_dr_from_library(sequence, captain_start_in_seq, dr_library,
-                         family_size_median, size_tolerance=0.6):
+                         family_size_median, size_tolerance=1.5,
+                         homology_end=None):
     """Search for known DR sequences from a family-specific library.
 
     For each known DR, finds occurrences upstream of the captain (5' end),
     then searches downstream for the same DR or close variants to define
-    the 3' boundary. Candidates are scored by DR length and proximity to
-    the family median size.
+    the 3' boundary. Candidates are scored by DR length, closeness to the
+    family median size, and agreement with any homology boundary if given.
 
     Parameters
     ----------
@@ -169,7 +170,12 @@ def find_dr_from_library(sequence, captain_start_in_seq, dr_library,
     family_size_median : int
         Median element size for this family.
     size_tolerance : float
-        Fraction of median size to allow as deviation (default 0.6 = ±60%).
+        Fraction of median size to allow above the median as search window
+        (default 3.0 = up to 4x median). This is intentionally generous to
+        catch exceptionally large elements.
+    homology_end : int or None
+        If a homology hit points to a particular 3' end, candidate DRs
+        near this position get a scoring boost.
 
     Returns
     -------
@@ -180,7 +186,7 @@ def find_dr_from_library(sequence, captain_start_in_seq, dr_library,
         return None, None, None, None
 
     seq_upper = sequence.upper()
-    min_size = max(5000, int(family_size_median * (1 - size_tolerance)))
+    min_size = max(5000, int(family_size_median * 0.4))
     max_size = int(family_size_median * (1 + size_tolerance))
 
     up_start = max(0, captain_start_in_seq - DEFAULT_UPSTREAM_SCAN)
@@ -234,7 +240,23 @@ def find_dr_from_library(sequence, captain_start_in_seq, dr_library,
 
                     size_ratio = element_size / family_size_median
                     match_bonus = 1.0 if variant == dr_seq else 0.8
-                    score = len(dr_seq) * match_bonus * (1.0 - abs(1.0 - size_ratio) * 0.3)
+
+                    # Base score: DR length and match quality, gently
+                    # penalised for extreme size deviation from family median.
+                    # Use a softer penalty (0.15) so elements up to 4x median
+                    # are still competitive.
+                    score = len(dr_seq) * match_bonus * max(
+                        0.3, 1.0 - abs(1.0 - size_ratio) * 0.15
+                    )
+
+                    # If homology points to a specific 3' end, boost scores
+                    # for DR positions near it (within 20kb).
+                    if homology_end is not None:
+                        dist_to_homology = abs(three_prime_pos - homology_end)
+                        if dist_to_homology < 20000:
+                            score *= 2.0  # strong bonus when DR agrees with homology
+                        elif dist_to_homology < 50000:
+                            score *= 1.3
 
                     if score > best_score:
                         best_score = score
@@ -407,11 +429,13 @@ def find_tirs_denovo(upstream_seq, downstream_seq,
 # --------------------------------------------------------------------------- #
 
 def define_boundaries(captain_hit, record, min_size, max_size,
-                      pwm_data=None, family_ref=None, homology_hit=None):
+                      pwm_data=None, family_ref=None, homology_hit=None,
+                      homology_end_hint=None):
     """Define Starship boundaries using a tiered approach.
 
     Tier 1: Use homology alignment coordinates if available.
-    Tier 2: Scan for family-specific DR motifs.
+    Tier 2: Scan for family-specific DR motifs (optionally guided by a
+            homology fragment 3' position hint).
     Tier 3: Captain position + family size prior (estimated).
     """
     contig_len = len(record.seq)
@@ -453,6 +477,7 @@ def define_boundaries(captain_hit, record, min_size, max_size,
             result = find_dr_from_library(
                 seq, captain_start, set(dr_library),
                 family_size_median,
+                homology_end=homology_end_hint,
             )
             five_pos, three_pos, five_dr, three_dr = result
 
