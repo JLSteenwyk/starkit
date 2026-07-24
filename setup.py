@@ -38,6 +38,7 @@ setup(
     entry_points={"console_scripts": ["starkit = starkit.starkit:main"]},
     version=__version__,
     include_package_data=True,
+    package_data={"starkit": ["data/*.fna"]},
     install_requires=REQUIRES,
     python_requires=">=3.9",
 )

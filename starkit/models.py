@@ -62,7 +62,7 @@ class StarshipResult:
     boundary_method: str = "estimated"  # "homology", "dr_motif", "myb_tf", or "estimated"
     homology_identity: float = 0.0     # 0-1, from homology alignment
     homology_coverage: float = 0.0     # 0-1, fraction of REFERENCE Starship covered
-    homology_reference_id: str = ""     # Starbase ship_id of the best matching reference
+    homology_reference_id: str = ""     # ID of the best matching reference
     homology_reference_family: str = ""  # Family of the best matching reference
     nested_in: Optional[str] = None    # starship_id of parent if nested
     adjacent_to: Optional[str] = None  # starship_id of nearby element

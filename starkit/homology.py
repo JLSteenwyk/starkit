@@ -1,9 +1,9 @@
 """
 Nucleotide homology search for Starship detection.
 
-Uses mappy (Python minimap2 bindings) to align known Starship sequences
-from Starbase against the input genome, detecting elements that may have
-degraded or missing captain genes.
+Uses mappy (Python minimap2 bindings) to align known Starship reference
+sequences against the input genome, detecting elements that may have degraded
+or missing captain genes.
 """
 
 import logging
@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 import mappy
+
+from .references import parse_ref_header
 
 logger = logging.getLogger(__name__)
 
@@ -40,21 +42,6 @@ def load_reference_starships(ref_fasta_path: str) -> str:
         logger.warning(f"Reference Starship FASTA not found: {ref_fasta_path}")
         return None
     return ref_fasta_path
-
-
-def parse_ref_header(header: str) -> Tuple[str, str, int]:
-    """Parse reference FASTA header: >ship_id|family|lengthbp
-    Returns (ship_id, family, length)."""
-    parts = header.split("|")
-    ship_id = parts[0] if len(parts) > 0 else header
-    family = parts[1] if len(parts) > 1 else "unclassified"
-    length = 0
-    if len(parts) > 2:
-        try:
-            length = int(parts[2].replace("bp", ""))
-        except ValueError:
-            length = 0
-    return ship_id, family, length
 
 
 def search_homology(

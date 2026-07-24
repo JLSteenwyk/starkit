@@ -796,7 +796,7 @@ table.params td {
     </div>
     <div class="stat-card">
         <div class="value">{{ counts.novel }}</div>
-        <div class="label"><span class="badge badge-new">New</span> to Starbase</div>
+        <div class="label"><span class="badge badge-new">No</span> reference match</div>
     </div>
 </div>
 
@@ -923,19 +923,23 @@ table.params td {
 <tr><th>Confidence score</th><td>{{ "%.4f" | format(s.confidence_score) }}</td></tr>
 <tr><th>Boundary method</th><td>{{ s.boundary_method }}</td></tr>
 <tr>
-    <th>Starbase novelty</th>
+    <th>Reference novelty</th>
     <td>
         {% if s.homology_identity >= 0.80 and s.homology_coverage >= 0.50 %}
         <span class="badge badge-known">Known</span>
-        &mdash; matches Starbase reference
+        &mdash; matches a reference Starship
         {% if s.homology_reference_id %}
+        {% if s.homology_reference_id.isdigit() %}
         <a href="https://starbase.serve.scilifelab.se/ships/{{ s.homology_reference_id }}" target="_blank" class="mono">#{{ s.homology_reference_id }}</a>
+        {% else %}
+        <span class="mono">{{ s.homology_reference_id }}</span>
+        {% endif %}
         {% if s.homology_reference_family and s.homology_reference_family != "unclassified" %}({{ s.homology_reference_family }}){% endif %}
         {% endif %}
         <br>
         <small style="color:#888;">{{ "%.0f" | format(s.homology_identity * 100) }}% identity over {{ "%.0f" | format(s.homology_coverage * 100) }}% of the reference Starship length</small>
         {% else %}
-        <span class="badge badge-new">New</span> &mdash; no significant match in Starbase
+        <span class="badge badge-new">New</span> &mdash; no significant match in the reference libraries
         {% endif %}
     </td>
 </tr>

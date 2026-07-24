@@ -22,6 +22,8 @@ def test_write_tsv(sample_starkit_run):
         assert "starship_id" in header
         assert "contig" in header
         assert "cargo_gene_count" in header
+        assert "reference_id" in header
+        assert "reference_family" in header
 
         data = lines[1].strip().split("\t")
         assert data[0] == "starship_001"

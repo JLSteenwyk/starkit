@@ -2,6 +2,7 @@
 
 import logging
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -22,7 +23,7 @@ from .models import CaptainHit, EvidenceLevel, StarshipResult, StarKITRun
 from .parser import create_parser
 from .report import generate_report
 from .settings import (
-    CAPTAIN_HMM_DIR, BOUNDARY_DATA_DIR, FAMILY_HMM_DIR, STARSHIP_REF_FASTA,
+    CAPTAIN_HMM_DIR, BOUNDARY_DATA_DIR, FAMILY_HMM_DIR, STARSHIP_REF_FASTAS,
 )
 from .version import __version__ as current_version
 from .dedup import resolve_overlaps
@@ -229,15 +230,21 @@ def run(
     genome_fasta = None
     combined_ref = None
     try:
-        # Build the reference FASTA (built-in + optional custom library)
-        ref_sources = []
-        if os.path.exists(STARSHIP_REF_FASTA):
-            ref_sources.append(STARSHIP_REF_FASTA)
+        # Build the reference FASTA (all available built-ins + optional custom
+        # library). Some installations omit the generated Starbase export, so
+        # only sources present on disk are selected.
+        ref_sources = [
+            path for path in STARSHIP_REF_FASTAS if os.path.isfile(path)
+        ]
         if library and os.path.exists(library):
             ref_sources.append(library)
             logger.info(f"Using custom library: {library}")
 
         if not no_homology and ref_sources:
+            logger.info(
+                "Using reference Starship libraries: "
+                + ", ".join(os.path.basename(path) for path in ref_sources)
+            )
             genome_fasta = _write_temp_fasta(records)
 
             # Concatenate reference sources if multiple
@@ -249,7 +256,10 @@ def run(
                 )
                 for src in ref_sources:
                     with open(src) as f:
-                        combined_ref.write(f.read())
+                        shutil.copyfileobj(f, combined_ref)
+                    # A separator protects against a source lacking a trailing
+                    # newline; blank FASTA lines are harmless.
+                    combined_ref.write("\n")
                 combined_ref.close()
                 ref_fasta = combined_ref.name
 
