@@ -15,7 +15,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from starkit.starkit import run
-from starkit.write import write_tsv, write_fasta
+from starkit.write import write_tsv, write_fasta, write_bed
 from starkit.report import generate_report
 
 GENOME_DIR = "benchmarking/genomes"
@@ -40,6 +40,7 @@ def run_starkit_on_genome(gbk_path, output_prefix):
         )
         write_tsv(starkit_run, output_prefix)
         write_fasta(starkit_run, output_prefix)
+        write_bed(starkit_run, output_prefix)
         generate_report(starkit_run, output_prefix)
         return starkit_run
     except Exception as e:
